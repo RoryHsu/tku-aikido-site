@@ -11,12 +11,14 @@ export default function AdminSidebar() {
     role === "president" ||
     role === "vice" ||
     role === "finance" ||
-    role === "activity";
+    role === "activity" ||
+    role === "pr";
   const canManageMedia =
     role === "president" ||
     role === "vice" ||
     role === "finance" ||
-    role === "activity";
+    role === "activity" ||
+    role === "pr";
 
   const navClass = ({ isActive }) =>
     `block rounded-2xl px-4 py-3 text-sm font-semibold transition ${

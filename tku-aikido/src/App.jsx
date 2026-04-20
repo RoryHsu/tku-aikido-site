@@ -149,7 +149,15 @@ export default function App() {
           path="/admin/events"
           element={
             <ProtectedRoute>
-              <RoleRoute allowRoles={["president", "vice", "finance", "activity"]}>
+              <RoleRoute
+                allowRoles={[
+                  "president",
+                  "vice",
+                  "finance",
+                  "activity",
+                  "pr",
+                ]}
+              >
                 <EventsPage />
               </RoleRoute>
             </ProtectedRoute>
@@ -160,7 +168,15 @@ export default function App() {
           path="/admin/media"
           element={
             <ProtectedRoute>
-              <RoleRoute allowRoles={["president", "vice", "finance", "activity"]}>
+              <RoleRoute
+                allowRoles={[
+                  "president",
+                  "vice",
+                  "finance",
+                  "activity",
+                  "pr",
+                ]}
+              >
                 <MediaPage />
               </RoleRoute>
             </ProtectedRoute>
