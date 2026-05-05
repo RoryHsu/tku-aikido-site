@@ -5,6 +5,7 @@ import RolesPage from "./pages/admin/RolesPage";
 import MembersPage from "./pages/admin/MembersPage";
 import ForgotPassword from "./pages/admin/ForgotPassword";
 import RoleRoute from "./routes/RoleRoute";
+import FinancePage from "./pages/admin/FinancePage";
 
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -159,6 +160,17 @@ export default function App() {
                 ]}
               >
                 <EventsPage />
+              </RoleRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/finance"
+          element={
+            <ProtectedRoute>
+              <RoleRoute allowRoles={["president", "finance"]}>
+                <FinancePage />
               </RoleRoute>
             </ProtectedRoute>
           }

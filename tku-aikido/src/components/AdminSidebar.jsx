@@ -7,6 +7,7 @@ export default function AdminSidebar() {
 
   const canManageRoles = role === "president";
   const canManageMembers = role === "president" || role === "vice";
+  const canManageFinance = role === "president" || role === "finance";
   const canManageEvents =
     role === "president" ||
     role === "vice" ||
@@ -61,6 +62,12 @@ export default function AdminSidebar() {
         {canManageMedia ? (
           <NavLink to="/admin/media" className={navClass}>
             照片 / 影片管理
+          </NavLink>
+        ) : null}
+
+        {canManageFinance ? (
+          <NavLink to="/admin/finance" className={navClass}>
+            財務管理
           </NavLink>
         ) : null}
       </nav>
