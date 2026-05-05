@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -616,7 +617,7 @@ function FinancePdfTemplate({
           </tr>
 
           <tr>
-            <td colSpan="2" style={{ ...pdfSignatureCell, height: "95px" }}>
+            <td colSpan="2" style={{ ...pdfSignatureCell, height: "105px" }}>
               <div style={{ fontWeight: "700" }}>經手人（財務長）簽章：</div>
               {treasurerSignature ? (
                 <img
@@ -624,7 +625,7 @@ function FinancePdfTemplate({
                   alt="財務長簽章"
                   style={{
                     width: "180px",
-                    height: "56px",
+                    height: "62px",
                     objectFit: "contain",
                     marginTop: "8px",
                   }}
@@ -632,7 +633,7 @@ function FinancePdfTemplate({
               ) : null}
             </td>
 
-            <td colSpan="3" style={{ ...pdfSignatureCell, height: "95px" }}>
+            <td colSpan="3" style={{ ...pdfSignatureCell, height: "105px" }}>
               <div style={{ fontWeight: "700" }}>社長簽章：</div>
               {presidentSignature ? (
                 <img
@@ -640,7 +641,7 @@ function FinancePdfTemplate({
                   alt="社長簽章"
                   style={{
                     width: "180px",
-                    height: "56px",
+                    height: "62px",
                     objectFit: "contain",
                     marginTop: "8px",
                   }}
@@ -648,15 +649,15 @@ function FinancePdfTemplate({
               ) : null}
             </td>
 
-            <td style={{ ...pdfSignatureCell, height: "95px" }}>
+            <td style={{ ...pdfSignatureCell, height: "105px" }}>
               <div style={{ fontWeight: "700" }}>社章</div>
               {clubSeal ? (
                 <img
                   src={clubSeal}
                   alt="社章"
                   style={{
-                    width: "70px",
-                    height: "70px",
+                    width: "72px",
+                    height: "72px",
                     objectFit: "contain",
                     marginTop: "4px",
                   }}
@@ -688,9 +689,11 @@ export default function FinancePage() {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [message, setMessage] = useState("");
+  const [deleteConfirmId, setDeleteConfirmId] = useState("");
 
   const role = profile?.role || "";
   const isPresident = role === "president";
+  const isFinanceRole = role === "finance";
   const isFinance = role === "finance" || role === "president";
 
   const amountChinese = useMemo(() => {
@@ -805,6 +808,7 @@ export default function FinancePage() {
     setReceiverSignature("");
     setTreasurerSignature("");
     setPresidentSignature("");
+    setDeleteConfirmId("");
     setMessage("");
   };
 
@@ -831,6 +835,7 @@ export default function FinancePage() {
   const saveRecord = async (status = "draft") => {
     setLoading(true);
     setMessage("");
+    setDeleteConfirmId("");
 
     try {
       const isCreatingReceiverSignatureRequest =
@@ -847,20 +852,16 @@ export default function FinancePage() {
       const payload = isCreatingReceiverSignatureRequest
         ? {
             ...basePayload,
-
             receiverSignature: "",
             treasurerSignature: "",
             presidentSignature: "",
-
             hasReceiverSignature: false,
             hasTreasurerSignature: false,
             hasPresidentSignature: false,
-
             receiverSignedAt: null,
             reviewedBy: "",
             reviewedByName: "",
             reviewedAt: null,
-
             receiverSignatureToken: nextToken,
             status: "pending_receiver_signature",
           }
@@ -914,6 +915,7 @@ export default function FinancePage() {
     setCurrentRecordId(record.id);
     setCurrentStatus(record.status || "");
     setReceiverSignatureToken(record.receiverSignatureToken || "");
+    setDeleteConfirmId("");
 
     setForm({
       activityName: record.activityName || "",
@@ -936,7 +938,13 @@ export default function FinancePage() {
     setTreasurerSignature(record.treasurerSignature || "");
     setPresidentSignature(record.presidentSignature || "");
 
-    setMessage("已載入單據。");
+    if (record.status === "approved") {
+      setMessage("已載入已完成單據。可以產生正式 PDF。");
+    } else if (isPresident && record.status === "pending_president_review") {
+      setMessage("已載入待社長審核單據。請確認內容、完成社長簽章，然後按「社長簽名並核准」。");
+    } else {
+      setMessage("已載入單據。");
+    }
   };
 
   const resubmitReturnedRecordWithoutReceiverResign = async () => {
@@ -951,14 +959,13 @@ export default function FinancePage() {
     }
 
     if (!receiverSignature) {
-      setMessage(
-        "此單據沒有領款人簽名，不能保留簽名送回流程。請重新建立領款人簽名連結。"
-      );
+      setMessage("此單據沒有領款人簽名，不能保留簽名送回流程。請重新建立領款人簽名連結。");
       return;
     }
 
     setLoading(true);
     setMessage("");
+    setDeleteConfirmId("");
 
     try {
       await updateDoc(doc(db, "financeRecords", currentRecordId), {
@@ -966,19 +973,15 @@ export default function FinancePage() {
         amount: Number(form.amount || 0),
         amountChinese,
         receiptImages,
-
         receiverSignature,
         hasReceiverSignature: true,
-
         treasurerSignature: "",
         presidentSignature: "",
         hasTreasurerSignature: false,
         hasPresidentSignature: false,
-
         reviewedBy: "",
         reviewedByName: "",
         reviewedAt: null,
-
         status: "pending_treasurer_signature",
         updatedAt: serverTimestamp(),
       });
@@ -987,9 +990,7 @@ export default function FinancePage() {
       setPresidentSignature("");
       setCurrentStatus("pending_treasurer_signature");
 
-      setMessage(
-        "已保留領款人簽名並送回財務長 / 經手人簽名階段。請財務長重新簽章後再送社長審核。"
-      );
+      setMessage("已保留領款人簽名並送回財務長 / 經手人簽名階段。請財務長重新簽章後再送社長審核。");
 
       fetchRecords();
     } catch (err) {
@@ -1018,6 +1019,7 @@ export default function FinancePage() {
 
     setLoading(true);
     setMessage("");
+    setDeleteConfirmId("");
 
     try {
       await updateDoc(doc(db, "financeRecords", currentRecordId), {
@@ -1061,6 +1063,7 @@ export default function FinancePage() {
 
     setLoading(true);
     setMessage("");
+    setDeleteConfirmId("");
 
     try {
       await updateDoc(doc(db, "financeRecords", currentRecordId), {
@@ -1088,6 +1091,7 @@ export default function FinancePage() {
   const updateRecordStatus = async (id, status) => {
     setLoading(true);
     setMessage("");
+    setDeleteConfirmId("");
 
     try {
       await updateDoc(doc(db, "financeRecords", id), {
@@ -1108,13 +1112,52 @@ export default function FinancePage() {
     setLoading(false);
   };
 
-  const generatePdf = async () => {
+  const deleteFinanceRecord = async (recordId) => {
+    if (!recordId) return;
+
+    if (deleteConfirmId !== recordId) {
+      setDeleteConfirmId(recordId);
+      setMessage("請再次點擊「確認刪除此單據」，才會真正刪除。");
+      return;
+    }
+
+    const finalConfirm = window.confirm(
+      "最後確認：此操作會永久刪除此財務單據，刪除後無法復原。確定要刪除嗎？"
+    );
+
+    if (!finalConfirm) {
+      setDeleteConfirmId("");
+      setMessage("已取消刪除。");
+      return;
+    }
+
+    setLoading(true);
     setMessage("");
 
+    try {
+      await deleteDoc(doc(db, "financeRecords", recordId));
+
+      if (currentRecordId === recordId) {
+        clearForm();
+      }
+
+      setDeleteConfirmId("");
+      setMessage("單據已刪除。");
+      fetchRecords();
+    } catch (err) {
+      console.error("delete finance record error:", err);
+      setMessage("刪除失敗，請確認 Firestore rules 是否允許刪除 financeRecords。");
+    }
+
+    setLoading(false);
+  };
+
+  const generatePdf = async () => {
+    setMessage("");
+    setDeleteConfirmId("");
+
     if (!canGeneratePdf) {
-      setMessage(
-        "流程尚未完成。必須完成領款人簽名、財務長 / 經手人簽名、社長簽名並核准後，才能產生正式 PDF。"
-      );
+      setMessage("流程尚未完成。必須完成領款人簽名、財務長 / 經手人簽名、社長簽名並核准後，才能產生正式 PDF。");
       return;
     }
 
@@ -1133,6 +1176,8 @@ export default function FinancePage() {
         scale: 2,
         backgroundColor: "#ffffff",
         useCORS: true,
+        windowWidth: 794,
+        windowHeight: pdfRef.current.scrollHeight,
       });
 
       const imgData = canvas.toDataURL("image/png");
@@ -1141,13 +1186,21 @@ export default function FinancePage() {
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
-      pdf.addImage(imgData, "PNG", 0, 0, pageWidth, pageHeight);
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      pdf.addImage(
+        imgData,
+        "PNG",
+        0,
+        0,
+        imgWidth,
+        imgHeight > pageHeight ? pageHeight : imgHeight
+      );
 
       const safeActivityName = form.activityName || "財務單據";
       const safeDate = form.date || new Date().toISOString().slice(0, 10);
-      const fileName = `${safeDate}_${safeActivityName}_${form.expenseType}_${
-        form.amount || 0
-      }元.pdf`;
+      const fileName = `${safeDate}_${safeActivityName}_${form.expenseType}_${form.amount || 0}元.pdf`;
 
       pdf.save(fileName);
       setMessage("正式 PDF 已產生並下載。");
@@ -1203,13 +1256,26 @@ export default function FinancePage() {
             </div>
           )}
 
+          {isPresident && currentStatus === "pending_president_review" ? (
+            <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-700">
+              此單據正在等待社長簽名審核。請確認左側資料與右側 PDF 預覽無誤後，在社長簽章區簽名，然後按「社長簽名並核准」。
+            </div>
+          ) : null}
+
+          {currentStatus === "approved" ? (
+            <div className="mt-4 rounded-2xl bg-green-50 px-4 py-4 text-sm leading-7 text-green-700">
+              此單據已完成簽核。現在只可產生正式 PDF。
+              {isFinanceRole ? " 財務長也可以刪除此單據。" : ""}
+            </div>
+          ) : null}
+
           {currentStatus === "returned" ? (
             <div className="mt-4 rounded-2xl bg-orange-50 px-4 py-4 text-sm leading-7 text-orange-700">
               此單據已被社長退回。你可以直接修改原本資料，不需要重新建立整張單據。
               若只是備註、活動編號或小錯字，可保留領款人簽名並送回財務長確認；
               若修改金額、領款人、收據或重要內容，建議重新建立領款人簽名連結。
             </div>
-          ) : formLocked ? (
+          ) : formLocked && currentStatus !== "approved" ? (
             <div className="mt-4 rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-red-700">
               領款人已簽名，主要單據內容已鎖定。若需修改，請由社長退回後再選擇是否重新建立領款人簽名連結。
             </div>
@@ -1549,18 +1615,6 @@ export default function FinancePage() {
               </div>
             ) : null}
 
-            <div
-              className={`rounded-2xl px-4 py-4 text-sm leading-7 ${
-                canGeneratePdf && clubSeal
-                  ? "bg-green-50 text-green-700"
-                  : "bg-slate-50 text-slate-500"
-              }`}
-            >
-              {canGeneratePdf && clubSeal
-                ? "流程已完成，可以產生正式 PDF。"
-                : "必須完成領款人簽名、財務長 / 經手人簽名、社長簽名、社長核准，並且已設定社章後，才能產生正式 PDF。"}
-            </div>
-
             <div className="flex flex-wrap gap-3">
               {!formLocked ? (
                 <>
@@ -1698,30 +1752,72 @@ export default function FinancePage() {
                     </div>
 
                     <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        type="button"
-                        onClick={() => loadRecordToForm(item)}
-                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                      >
-                        載入單據 / 簽名 / 產生 PDF
-                      </button>
+                      {item.status === "approved" ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              loadRecordToForm(item);
+                              setMessage("已載入已完成單據。請到左側按「產生正式 PDF」。");
+                            }}
+                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                          >
+                            產生 PDF
+                          </button>
 
-                      {item.receiverSignatureToken ? (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const link = `${window.location.origin}/finance/sign/${item.id}?token=${item.receiverSignatureToken}`;
-                            navigator.clipboard.writeText(link);
-                            setMessage("已複製領款人簽名連結，可傳給對方簽名。");
-                          }}
-                          className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
-                        >
-                          複製領款人簽名連結
-                        </button>
-                      ) : null}
+                          {isFinanceRole ? (
+                            <button
+                              type="button"
+                              disabled={loading}
+                              onClick={() => deleteFinanceRecord(item.id)}
+                              className={`rounded-xl px-4 py-2 text-sm font-semibold text-white ${
+                                deleteConfirmId === item.id
+                                  ? "bg-red-700 hover:bg-red-800"
+                                  : "bg-red-500 hover:bg-red-600"
+                              }`}
+                            >
+                              {deleteConfirmId === item.id
+                                ? "確認刪除此單據"
+                                : "刪除此單據"}
+                            </button>
+                          ) : null}
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => loadRecordToForm(item)}
+                            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
+                              isPresident && item.status === "pending_president_review"
+                                ? "bg-slate-900 text-white hover:bg-slate-800"
+                                : "border border-slate-300 text-slate-700 hover:bg-slate-50"
+                            }`}
+                          >
+                            {isPresident && item.status === "pending_president_review"
+                              ? "確認並簽名"
+                              : "載入單據 / 簽名 / 產生 PDF"}
+                          </button>
+
+                          {!isPresident &&
+                          item.receiverSignatureToken &&
+                          item.status === "pending_receiver_signature" ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const link = `${window.location.origin}/finance/sign/${item.id}?token=${item.receiverSignatureToken}`;
+                                navigator.clipboard.writeText(link);
+                                setMessage("已複製領款人簽名連結，可傳給對方簽名。");
+                              }}
+                              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                            >
+                              複製領款人簽名連結
+                            </button>
+                          ) : null}
+                        </>
+                      )}
                     </div>
 
-                    {isPresident ? (
+                    {isPresident && item.status !== "approved" ? (
                       <div className="mt-4 flex flex-wrap gap-3">
                         <button
                           type="button"
@@ -1761,14 +1857,36 @@ export default function FinancePage() {
 
             <div className="mt-6 overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-4">
               <div
-                ref={pdfRef}
                 style={{
                   transform: "scale(0.65)",
                   transformOrigin: "top left",
                   width: "794px",
-                  height: "1123px",
+                  height: "760px",
                 }}
               >
+                <FinancePdfTemplate
+                  form={form}
+                  amountChinese={amountChinese}
+                  receipts={receiptImages}
+                  receiverSignature={receiverSignature}
+                  treasurerSignature={treasurerSignature}
+                  presidentSignature={presidentSignature}
+                  clubSeal={clubSeal}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                position: "fixed",
+                left: "-99999px",
+                top: 0,
+                width: "794px",
+                background: "#ffffff",
+                zIndex: -1,
+              }}
+            >
+              <div ref={pdfRef}>
                 <FinancePdfTemplate
                   form={form}
                   amountChinese={amountChinese}
