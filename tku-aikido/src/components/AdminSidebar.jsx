@@ -1,5 +1,4 @@
-import { NavLink, useNavigate } from "react-router-dom";
-import { signOut } from "firebase/auth";
+import { Link, NavLink } from "react-router-dom";
 import {
   CalendarDays,
   FileText,
@@ -9,8 +8,8 @@ import {
   ShieldCheck,
   Stamp,
   Users,
+  X,
 } from "lucide-react";
-import { auth } from "../lib/firebase";
 import { useAuth } from "../context/AuthContext";
 
 const roleLabelMap = {
@@ -21,125 +20,145 @@ const roleLabelMap = {
   pr: "公關",
 };
 
-export default function AdminSidebar() {
-  const { profile } = useAuth();
-  const navigate = useNavigate();
+const allMenuItems = [
+  {
+    label: "後台首頁",
+    path: "/admin/dashboard",
+    icon: Home,
+    roles: ["president", "vice", "finance", "activity", "pr"],
+  },
+  {
+    label: "職位授權管理",
+    path: "/admin/roles",
+    icon: ShieldCheck,
+    roles: ["president"],
+  },
+  {
+    label: "社員資料管理",
+    path: "/admin/members",
+    icon: Users,
+    roles: ["president", "vice"],
+  },
+  {
+    label: "活動公告管理",
+    path: "/admin/events",
+    icon: CalendarDays,
+    roles: ["president", "vice", "finance", "activity", "pr"],
+  },
+  {
+    label: "照片 / 影片管理",
+    path: "/admin/media",
+    icon: Image,
+    roles: ["president", "vice", "finance", "activity", "pr"],
+  },
+  {
+    label: "領款收據管理",
+    path: "/admin/finance",
+    icon: FileText,
+    roles: ["president", "finance"],
+  },
+  {
+    label: "社章設定",
+    path: "/admin/seal",
+    icon: Stamp,
+    roles: ["president"],
+  },
+];
+
+export default function AdminSidebar({ open = false, onClose }) {
+  const { profile, logout } = useAuth();
 
   const role = profile?.role || "";
-  const roleLabel = roleLabelMap[role] || "未設定";
+  const roleLabel = roleLabelMap[role] || role || "未設定";
+
+  const visibleMenuItems = allMenuItems.filter((item) =>
+    item.roles.includes(role)
+  );
 
   const navClass = ({ isActive }) =>
-    `flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+    [
+      "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-bold transition",
       isActive
         ? "bg-white text-slate-950 shadow-sm"
-        : "text-slate-300 hover:bg-white/10 hover:text-white"
-    }`;
-
-  const canManageRoles = role === "president";
-  const canManageMembers = role === "president" || role === "vice";
-  const canManageFinance = role === "president" || role === "finance";
-  const canManageClubSeal = role === "president";
-
-  const canManageEvents = [
-    "president",
-    "vice",
-    "finance",
-    "activity",
-    "pr",
-  ].includes(role);
-
-  const canManageMedia = [
-    "president",
-    "vice",
-    "finance",
-    "activity",
-    "pr",
-  ].includes(role);
+        : "text-slate-300 hover:bg-white/10 hover:text-white",
+    ].join(" ");
 
   const handleLogout = async () => {
-    await signOut(auth);
-    navigate("/admin/login");
+    await logout();
   };
 
   return (
-    <aside className="fixed left-0 top-0 z-40 flex h-screen w-64 flex-col bg-slate-950 px-5 py-6 text-white">
-      <div>
-        <div className="text-xs font-semibold tracking-[0.28em] text-slate-400">
-          TKU AIKIDO ADMIN
+    <aside
+      className={[
+        "fixed inset-y-0 left-0 z-50 flex w-[86vw] max-w-[320px] flex-col bg-slate-950 px-5 py-6 text-white shadow-2xl transition-transform duration-300 sm:w-80 lg:w-72 lg:translate-x-0",
+        open ? "translate-x-0" : "-translate-x-full",
+      ].join(" ")}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <div className="text-xs font-bold tracking-[0.28em] text-slate-400">
+            TKU AIKIDO ADMIN
+          </div>
+
+          <div className="mt-4 text-3xl font-black leading-tight">
+            後台系統
+          </div>
         </div>
 
-        <div className="mt-4 text-3xl font-black">後台系統</div>
-
-        <div className="mt-4 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-          目前職位：
-          <span className="ml-1 font-bold text-white">{roleLabel}</span>
-        </div>
-      </div>
-
-      <nav className="mt-8 flex flex-1 flex-col gap-2">
-        <NavLink to="/admin/dashboard" className={navClass}>
-          <Home className="h-4 w-4" />
-          後台首頁
-        </NavLink>
-
-        {canManageRoles ? (
-          <NavLink to="/admin/roles" className={navClass}>
-            <ShieldCheck className="h-4 w-4" />
-            職位授權管理
-          </NavLink>
-        ) : null}
-
-        {canManageMembers ? (
-          <NavLink to="/admin/members" className={navClass}>
-            <Users className="h-4 w-4" />
-            社員資料管理
-          </NavLink>
-        ) : null}
-
-        {canManageEvents ? (
-          <NavLink to="/admin/events" className={navClass}>
-            <CalendarDays className="h-4 w-4" />
-            活動公告管理
-          </NavLink>
-        ) : null}
-
-        {canManageMedia ? (
-          <NavLink to="/admin/media" className={navClass}>
-            <Image className="h-4 w-4" />
-            照片 / 影片管理
-          </NavLink>
-        ) : null}
-
-        {canManageFinance ? (
-          <NavLink to="/admin/finance" className={navClass}>
-            <FileText className="h-4 w-4" />
-            領款收據管理
-          </NavLink>
-        ) : null}
-
-        {canManageClubSeal ? (
-          <NavLink to="/admin/club-seal" className={navClass}>
-            <Stamp className="h-4 w-4" />
-            社章設定
-          </NavLink>
-        ) : null}
-      </nav>
-
-      <div className="border-t border-white/10 pt-4">
         <button
           type="button"
-          onClick={() => navigate("/")}
-          className="mb-3 w-full rounded-2xl border border-white/10 px-4 py-3 text-left text-sm font-semibold text-slate-300 transition hover:bg-white/10 hover:text-white"
+          onClick={onClose}
+          className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 text-slate-300 hover:bg-white/10 lg:hidden"
+          aria-label="關閉後台選單"
+        >
+          <X size={22} />
+        </button>
+      </div>
+
+      <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+        <div className="text-xs text-slate-400">目前職位：</div>
+        <div className="mt-1 text-base font-black text-white">{roleLabel}</div>
+
+        {profile?.email ? (
+          <div className="mt-1 break-all text-xs leading-5 text-slate-400">
+            {profile.email}
+          </div>
+        ) : null}
+      </div>
+
+      <nav className="mt-7 flex-1 space-y-2 overflow-y-auto pr-1">
+        {visibleMenuItems.map((item) => {
+          const Icon = item.icon;
+
+          return (
+            <NavLink
+              key={item.path}
+              to={item.path}
+              onClick={onClose}
+              className={navClass}
+            >
+              <Icon size={20} className="shrink-0" />
+              <span className="truncate">{item.label}</span>
+            </NavLink>
+          );
+        })}
+      </nav>
+
+      <div className="mt-6 border-t border-white/10 pt-5">
+        <Link
+          to="/"
+          onClick={onClose}
+          className="flex items-center justify-center rounded-2xl border border-white/10 px-4 py-3 text-sm font-bold text-slate-200 hover:bg-white/10"
         >
           回到主頁
-        </button>
+        </Link>
 
         <button
           type="button"
           onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-bold text-slate-950 transition hover:bg-slate-200"
+          className="mt-3 flex w-full items-center justify-center gap-2 rounded-2xl bg-white px-4 py-3 text-sm font-black text-slate-950 hover:bg-slate-200"
         >
-          <LogOut className="h-4 w-4" />
+          <LogOut size={18} />
           登出
         </button>
       </div>
