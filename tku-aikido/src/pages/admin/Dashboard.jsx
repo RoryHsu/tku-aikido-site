@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { collection, getDocs } from "firebase/firestore";
 import {
-  FileText,
-  Clock3,
-  PenLine,
-  Users,
   CalendarDays,
+  Clock3,
+  FileText,
   Image,
+  PenLine,
+  Settings,
   ShieldCheck,
+  Stamp,
+  Users,
 } from "lucide-react";
 import { db } from "../../lib/firebase";
 import { useAuth } from "../../context/AuthContext";
@@ -22,38 +24,6 @@ const roleLabelMap = {
   pr: "公關",
 };
 
-const statusLabelMap = {
-  draft: "草稿",
-  pending_receiver_signature: "待領款人簽名",
-  pending_treasurer_signature: "待財務長 / 經手人簽名",
-  pending_president_review: "待社長簽名審核",
-  approved: "已完成",
-  returned: "退回修改",
-  rejected: "已拒絕",
-};
-
-const statusClassMap = {
-  draft: "bg-slate-100 text-slate-700",
-  pending_receiver_signature: "bg-blue-100 text-blue-700",
-  pending_treasurer_signature: "bg-purple-100 text-purple-700",
-  pending_president_review: "bg-amber-100 text-amber-700",
-  approved: "bg-green-100 text-green-700",
-  returned: "bg-orange-100 text-orange-700",
-  rejected: "bg-red-100 text-red-700",
-};
-
-function formatDate(value) {
-  if (!value) return "未填寫";
-
-  if (typeof value === "string") return value;
-
-  if (value?.toDate) {
-    return value.toDate().toLocaleDateString("zh-TW");
-  }
-
-  return "未填寫";
-}
-
 function StatCard({ icon: Icon, title, value, desc, to, color = "slate" }) {
   const colorMap = {
     slate: "bg-slate-900 text-white",
@@ -61,6 +31,7 @@ function StatCard({ icon: Icon, title, value, desc, to, color = "slate" }) {
     blue: "bg-blue-600 text-white",
     purple: "bg-purple-600 text-white",
     green: "bg-green-600 text-white",
+    red: "bg-red-600 text-white",
   };
 
   const content = (
@@ -92,49 +63,48 @@ function StatCard({ icon: Icon, title, value, desc, to, color = "slate" }) {
   );
 }
 
+function ActionCard({ icon: Icon, title, subtitle, desc, to }) {
+  return (
+    <Link
+      to={to}
+      className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
+    >
+      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-900 text-white">
+        <Icon className="h-6 w-6" />
+      </div>
+
+      <div className="mt-5 text-sm font-semibold tracking-[0.18em] text-slate-500">
+        {subtitle}
+      </div>
+
+      <div className="mt-3 text-3xl font-black text-slate-900 group-hover:text-blue-700">
+        {title}
+      </div>
+
+      <p className="mt-3 leading-7 text-slate-600">{desc}</p>
+    </Link>
+  );
+}
+
 function FinanceRecordCard({ item }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex-1">
-          <div className="text-lg font-black text-slate-900">
-            {item.activityName || "未命名財務證明"}
-          </div>
-
-          <div className="mt-2 text-sm text-slate-500">
-            費用類別：{item.expenseType || "未填寫"} ｜ 金額：NT${" "}
-            {item.amount || 0}
-          </div>
-
-          <div className="mt-2 text-sm text-slate-500">
-            領款人：{item.receiverName || "未填寫"}
-          </div>
-
-          <div className="mt-2 text-sm text-slate-500">
-            建立者：{item.createdByName || item.createdBy || "未知"}
-          </div>
-
-          <div className="mt-2 text-sm text-slate-500">
-            建立日期：{formatDate(item.createdAt)}
-          </div>
-        </div>
-
-        <span
-          className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
-            statusClassMap[item.status] || "bg-slate-100 text-slate-700"
-          }`}
-        >
-          {statusLabelMap[item.status] || item.status || "未設定"}
-        </span>
+      <div className="text-lg font-black text-slate-900">
+        {item.activityName || "未命名財務證明"}
       </div>
 
-      <div className="mt-4 text-sm text-slate-500">
-        簽章進度：
-        <span className="ml-1">
-          領款人 {item.hasReceiverSignature ? "✅" : "未簽"} ／ 財務長{" "}
-          {item.hasTreasurerSignature ? "✅" : "未簽"} ／ 社長{" "}
-          {item.hasPresidentSignature ? "✅" : "未簽"}
-        </span>
+      <div className="mt-2 text-sm text-slate-500">
+        費用類別：{item.expenseType || "未填寫"} ｜ 金額：NT$ {item.amount || 0}
+      </div>
+
+      <div className="mt-2 text-sm text-slate-500">
+        領款人：{item.receiverName || "未填寫"}
+      </div>
+
+      <div className="mt-2 text-sm text-slate-500">
+        簽章進度：領款人 {item.hasReceiverSignature ? "✅" : "未簽"} ／ 財務長{" "}
+        {item.hasTreasurerSignature ? "✅" : "未簽"} ／ 社長{" "}
+        {item.hasPresidentSignature ? "✅" : "未簽"}
       </div>
 
       <Link
@@ -157,13 +127,15 @@ export default function Dashboard() {
 
   const isPresident = role === "president";
   const isFinance = role === "finance";
-
-  const canSeeRoles = role === "president";
-  const canSeeMembers = role === "president" || role === "vice";
-  const canSeeFinance = role === "president" || role === "finance";
+  const canReadFinance = role === "president" || role === "finance";
 
   useEffect(() => {
     const fetchFinanceRecords = async () => {
+      if (!canReadFinance) {
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
 
       try {
@@ -187,12 +159,8 @@ export default function Dashboard() {
       setLoading(false);
     };
 
-    if (canSeeFinance) {
-      fetchFinanceRecords();
-    } else {
-      setLoading(false);
-    }
-  }, [canSeeFinance]);
+    fetchFinanceRecords();
+  }, [canReadFinance]);
 
   const pendingReceiverSignature = useMemo(() => {
     return financeRecords.filter(
@@ -211,6 +179,144 @@ export default function Dashboard() {
       (item) => item.status === "pending_president_review"
     );
   }, [financeRecords]);
+
+  const actionCardsByRole = {
+    president: [
+      {
+        icon: Users,
+        title: "Roles",
+        subtitle: "職位授權管理",
+        desc: "新增與管理社長、副社長、財務長、活動長、公關角色。",
+        to: "/admin/roles",
+      },
+      {
+        icon: Users,
+        title: "Members",
+        subtitle: "社員資料管理",
+        desc: "管理社員資料、年資表與社團成員紀錄。",
+        to: "/admin/members",
+      },
+      {
+        icon: CalendarDays,
+        title: "Event",
+        subtitle: "活動公告管理",
+        desc: "新增、刪除與公開活動公告。",
+        to: "/admin/events",
+      },
+      {
+        icon: Image,
+        title: "Media",
+        subtitle: "照片 / 影片管理",
+        desc: "管理 Google Drive 照片、影片與前台顯示。",
+        to: "/admin/media",
+      },
+      {
+        icon: Stamp,
+        title: "Club Seal",
+        subtitle: "社章設定",
+        desc: "上傳社團社章，之後財務證明 PDF 會自動套用。",
+        to: "/admin/club-seal",
+      },
+      {
+        icon: FileText,
+        title: "Finance",
+        subtitle: "財務審核中心",
+        desc: "查看待社長簽名審核的財務證明與收據。",
+        to: "/admin/finance",
+      },
+    ],
+
+    vice: [
+      {
+        icon: Users,
+        title: "Members",
+        subtitle: "社員資料管理",
+        desc: "管理社員資料、年資表與社團成員紀錄。",
+        to: "/admin/members",
+      },
+      {
+        icon: CalendarDays,
+        title: "Event",
+        subtitle: "活動公告管理",
+        desc: "協助新增、編輯與整理活動公告。",
+        to: "/admin/events",
+      },
+      {
+        icon: Image,
+        title: "Media",
+        subtitle: "照片 / 影片管理",
+        desc: "協助整理社團照片、影片與前台顯示。",
+        to: "/admin/media",
+      },
+    ],
+
+    finance: [
+      {
+        icon: CalendarDays,
+        title: "Event",
+        subtitle: "活動公告管理",
+        desc: "可同步管理活動公告內容。",
+        to: "/admin/events",
+      },
+      {
+        icon: Image,
+        title: "Media",
+        subtitle: "照片 / 影片管理",
+        desc: "可協助管理 Google Drive 媒體素材。",
+        to: "/admin/media",
+      },
+      {
+        icon: FileText,
+        title: "Finance",
+        subtitle: "領款收據管理",
+        desc: "建立財務證明、簽名流程與 PDF 輸出。",
+        to: "/admin/finance",
+      },
+    ],
+
+    activity: [
+      {
+        icon: CalendarDays,
+        title: "Event",
+        subtitle: "活動公告管理",
+        desc: "新增、刪除與公開活動公告。",
+        to: "/admin/events",
+      },
+      {
+        icon: Image,
+        title: "Media",
+        subtitle: "照片 / 影片管理",
+        desc: "管理活動照片、影片與前台顯示。",
+        to: "/admin/media",
+      },
+      {
+        icon: Settings,
+        title: "Check-in",
+        subtitle: "簽到管理",
+        desc: "管理活動簽到資料與現場流程。",
+        to: "/admin/events",
+      },
+    ],
+
+    pr: [
+      {
+        icon: CalendarDays,
+        title: "Event",
+        subtitle: "活動公告管理",
+        desc: "負責宣傳用活動內容編輯與發佈。",
+        to: "/admin/events",
+      },
+      {
+        icon: Image,
+        title: "Media",
+        subtitle: "照片 / 影片管理",
+        desc: "整理對外展示的照片、影片與成果素材。",
+        to: "/admin/media",
+      },
+    ],
+  };
+
+  const actionCards = actionCardsByRole[role] || [];
 
   return (
     <AdminLayout>
@@ -265,53 +371,20 @@ export default function Dashboard() {
           </div>
         ) : null}
 
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-          {canSeeRoles ? (
-            <StatCard
-              icon={Users}
-              title="職位授權管理"
-              value="Role"
-              desc="新增或管理社長、副社長、財務長、活動長與公關。"
-              to="/admin/roles"
-            />
-          ) : null}
-
-          {canSeeMembers ? (
-            <StatCard
-              icon={Users}
-              title="社員資料管理"
-              value="Member"
-              desc="管理社員資料與年資表。"
-              to="/admin/members"
-            />
-          ) : null}
-
-          <StatCard
-            icon={CalendarDays}
-            title="活動公告管理"
-            value="Event"
-            desc="新增、刪除與公開活動公告。"
-            to="/admin/events"
-          />
-
-          <StatCard
-            icon={Image}
-            title="照片 / 影片管理"
-            value="Media"
-            desc="管理 Google Drive 照片、影片與前台顯示。"
-            to="/admin/media"
-          />
-
-          {canSeeFinance ? (
-            <StatCard
-              icon={FileText}
-              title="領款收據管理"
-              value="Finance"
-              desc="建立財務證明、簽名流程與 PDF 輸出。"
-              to="/admin/finance"
-            />
-          ) : null}
-        </div>
+        {actionCards.length > 0 ? (
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {actionCards.map((item) => (
+              <ActionCard
+                key={item.title + item.to}
+                icon={item.icon}
+                title={item.title}
+                subtitle={item.subtitle}
+                desc={item.desc}
+                to={item.to}
+              />
+            ))}
+          </div>
+        ) : null}
 
         {isPresident ? (
           <div className="rounded-3xl bg-white p-8 shadow-sm">

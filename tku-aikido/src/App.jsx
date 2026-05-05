@@ -21,6 +21,7 @@ import MembersPage from "./pages/admin/MembersPage";
 import EventsPage from "./pages/admin/EventsPage";
 import MediaPage from "./pages/admin/MediaPage";
 import FinancePage from "./pages/admin/FinancePage";
+import ClubSealPage from "./pages/admin/ClubSealPage";
 
 import FinanceSignPage from "./pages/FinanceSignPage";
 
@@ -123,8 +124,7 @@ export default function App() {
           }
         />
 
-        {/* Public Finance Signature Page */}
-        {/* 這頁不能包 ProtectedRoute，因為領款人不一定有後台帳號 */}
+        {/* Public Signature Page */}
         <Route path="/finance/sign/:recordId" element={<FinanceSignPage />} />
 
         {/* Admin Auth Pages */}
@@ -141,7 +141,7 @@ export default function App() {
           }
         />
 
-        {/* President Only：職位授權管理 */}
+        {/* President Only */}
         <Route
           path="/admin/roles"
           element={
@@ -153,7 +153,18 @@ export default function App() {
           }
         />
 
-        {/* President + Vice：社員資料 / 年資管理 */}
+        <Route
+          path="/admin/club-seal"
+          element={
+            <ProtectedRoute>
+              <RoleRoute allowRoles={["president"]}>
+                <ClubSealPage />
+              </RoleRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* President + Vice */}
         <Route
           path="/admin/members"
           element={
@@ -165,7 +176,7 @@ export default function App() {
           }
         />
 
-        {/* All Officers：活動公告管理 */}
+        {/* All Officers */}
         <Route
           path="/admin/events"
           element={
@@ -185,7 +196,6 @@ export default function App() {
           }
         />
 
-        {/* All Officers：照片 / 影片管理 */}
         <Route
           path="/admin/media"
           element={
@@ -205,7 +215,7 @@ export default function App() {
           }
         />
 
-        {/* President + Finance：領款收據 / 財務證明管理 */}
+        {/* President + Finance */}
         <Route
           path="/admin/finance"
           element={

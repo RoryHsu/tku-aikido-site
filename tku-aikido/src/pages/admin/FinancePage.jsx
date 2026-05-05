@@ -3,6 +3,7 @@ import {
   addDoc,
   collection,
   doc,
+  getDoc,
   getDocs,
   orderBy,
   query,
@@ -341,23 +342,7 @@ function FinancePdfTemplate({
           '"Noto Sans TC", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif',
       }}
     >
-      <div className="mb-3 flex items-center gap-3">
-        <div
-          style={{
-            width: "42px",
-            height: "42px",
-            border: "2px solid #111",
-            borderRadius: "50%",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: "10px",
-            fontWeight: "bold",
-          }}
-        >
-          合氣
-        </div>
-
+      <div className="mb-3 text-center">
         <div style={{ fontSize: "18px", fontWeight: "700", letterSpacing: "2px" }}>
           淡江大學合氣道社－財務證明
         </div>
@@ -688,16 +673,29 @@ export default function FinancePage() {
 
   const canGeneratePdf =
     currentStatus === "approved" &&
-    Boolean(receiverSignature) &&
-    Boolean(treasurerSignature) &&
-    Boolean(presidentSignature);
+    receiverSignature?.startsWith("data:image/") &&
+    treasurerSignature?.startsWith("data:image/") &&
+    presidentSignature?.startsWith("data:image/");
 
   useEffect(() => {
-    const savedSeal = localStorage.getItem("tkuAikidoClubSeal");
-    if (savedSeal) setClubSeal(savedSeal);
-
+    fetchClubSeal();
     fetchRecords();
   }, []);
+
+  const fetchClubSeal = async () => {
+    try {
+      const ref = doc(db, "clubSettings", "main");
+      const snap = await getDoc(ref);
+
+      if (snap.exists()) {
+        const data = snap.data();
+        setClubSeal(data.clubSeal || "");
+      }
+    } catch (error) {
+      console.error("fetch club seal error:", error);
+      setMessage("讀取社章失敗，PDF 可能暫時無法自動套用社章。");
+    }
+  };
 
   const fetchRecords = async () => {
     setFetching(true);
@@ -748,15 +746,6 @@ export default function FinancePage() {
     }
 
     setReceiptImages((prev) => [...prev, ...imageUrls]);
-  };
-
-  const handleClubSealUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const dataUrl = await readFileAsDataUrl(file);
-    setClubSeal(dataUrl);
-    localStorage.setItem("tkuAikidoClubSeal", dataUrl);
   };
 
   const clearForm = () => {
@@ -923,6 +912,11 @@ export default function FinancePage() {
       return;
     }
 
+    if (!clubSeal) {
+      setMessage("尚未設定社章。請先到社章設定頁上傳社章。");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
 
@@ -930,7 +924,7 @@ export default function FinancePage() {
       await updateDoc(doc(db, "financeRecords", currentRecordId), {
         presidentSignature,
         hasPresidentSignature: true,
-        hasClubSeal: Boolean(clubSeal),
+        hasClubSeal: true,
         status: "approved",
         reviewedBy: currentUser?.email || "",
         reviewedByName: profile?.name || "",
@@ -977,8 +971,13 @@ export default function FinancePage() {
 
     if (!canGeneratePdf) {
       setMessage(
-        "流程尚未完成。必須完成領款人簽名、財務長簽名、社長簽名並核准後，才能產生正式 PDF。"
+        "流程尚未完成。必須完成領款人簽名、財務長 / 經手人簽名、社長簽名並核准後，才能產生正式 PDF。"
       );
+      return;
+    }
+
+    if (!clubSeal) {
+      setMessage("尚未設定社章，不能產生正式 PDF。");
       return;
     }
 
@@ -1041,7 +1040,7 @@ export default function FinancePage() {
 
           <p className="mt-4 leading-8 text-slate-600">
             流程：財務長建單 → 領款人線上簽名 → 財務長 / 經手人簽名 →
-            社長簽名審核 → 產生正式 PDF。
+            社長簽名審核 → 自動套用社章 → 產生正式 PDF。
           </p>
 
           {currentRecordId ? (
@@ -1342,34 +1341,31 @@ export default function FinancePage() {
                     單據尚未送到社長審核階段，社長簽章區會先鎖定。
                   </div>
                 )}
-
-                <div className="rounded-2xl border border-slate-200 bg-white p-5">
-                  <label className="mb-2 block text-sm font-medium text-slate-700">
-                    上傳社章 JPG / PNG
-                  </label>
-
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleClubSealUpload}
-                    className="block w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
-                  />
-
-                  {clubSeal ? (
-                    <div className="mt-4 flex items-center gap-4">
-                      <img
-                        src={clubSeal}
-                        alt="社章"
-                        className="h-24 w-24 rounded-xl border border-slate-200 object-contain"
-                      />
-                      <div className="text-sm text-slate-500">
-                        社章已儲存在此瀏覽器，下次產生 PDF 會自動套用。
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
               </>
             ) : null}
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+              <div className="text-sm font-semibold text-slate-700">
+                社章套用狀態
+              </div>
+
+              {clubSeal ? (
+                <div className="mt-4 flex items-center gap-4">
+                  <img
+                    src={clubSeal}
+                    alt="社章"
+                    className="h-20 w-20 rounded-xl border border-slate-200 bg-white object-contain p-2"
+                  />
+                  <div className="text-sm leading-7 text-slate-500">
+                    已讀取社長設定的社章。核准後產生 PDF 時，會自動套用在「社章」欄位。
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3 text-sm leading-7 text-red-600">
+                  尚未設定社章。請社長先到「社章設定」頁上傳社章。
+                </div>
+              )}
+            </div>
 
             {message ? (
               <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
@@ -1379,14 +1375,14 @@ export default function FinancePage() {
 
             <div
               className={`rounded-2xl px-4 py-4 text-sm leading-7 ${
-                canGeneratePdf
+                canGeneratePdf && clubSeal
                   ? "bg-green-50 text-green-700"
                   : "bg-slate-50 text-slate-500"
               }`}
             >
-              {canGeneratePdf
+              {canGeneratePdf && clubSeal
                 ? "流程已完成，可以產生正式 PDF。"
-                : "必須完成領款人簽名、財務長 / 經手人簽名、社長簽名並核准後，才能產生正式 PDF。"}
+                : "必須完成領款人簽名、財務長 / 經手人簽名、社長簽名、社長核准，並且已設定社章後，才能產生正式 PDF。"}
             </div>
 
             <div className="flex flex-wrap gap-3">
@@ -1436,10 +1432,10 @@ export default function FinancePage() {
 
               <button
                 type="button"
-                disabled={!canGeneratePdf}
+                disabled={!canGeneratePdf || !clubSeal}
                 onClick={generatePdf}
                 className={`rounded-xl px-5 py-3 text-sm font-semibold ${
-                  canGeneratePdf
+                  canGeneratePdf && clubSeal
                     ? "bg-slate-900 text-white hover:bg-slate-800"
                     : "cursor-not-allowed bg-slate-300 text-slate-500"
                 }`}
