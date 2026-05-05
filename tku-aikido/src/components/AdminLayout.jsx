@@ -21,7 +21,7 @@ export default function AdminLayout({ children }) {
     <div className="min-h-screen bg-slate-100">
       <AdminSidebar />
 
-      <div className="min-h-screen pl-64">
+      <div className="ml-64 min-h-screen">
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
           <div className="flex h-24 items-center justify-between px-10">
             <div>
