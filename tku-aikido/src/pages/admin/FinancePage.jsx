@@ -198,6 +198,26 @@ function PdfCheckbox({ checked, label }) {
   );
 }
 
+function SignatureProgress({ item }) {
+  const Badge = ({ done, label }) => (
+    <span
+      className={`inline-flex rounded-full px-3 py-1 text-xs font-bold ${
+        done ? "bg-green-100 text-green-700" : "bg-slate-100 text-slate-500"
+      }`}
+    >
+      {label}：{done ? "已簽" : "未簽"}
+    </span>
+  );
+
+  return (
+    <div className="mt-3 flex flex-wrap gap-2">
+      <Badge done={item.hasReceiverSignature} label="領款人" />
+      <Badge done={item.hasTreasurerSignature} label="財務長" />
+      <Badge done={item.hasPresidentSignature} label="社長" />
+    </div>
+  );
+}
+
 function SignaturePad({ label, value, onChange }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
@@ -919,6 +939,67 @@ export default function FinancePage() {
     setMessage("已載入單據。");
   };
 
+  const resubmitReturnedRecordWithoutReceiverResign = async () => {
+    if (!currentRecordId) {
+      setMessage("請先從右側列表載入一筆被退回的單據。");
+      return;
+    }
+
+    if (currentStatus !== "returned") {
+      setMessage("只有被社長退回的單據，才能使用此功能。");
+      return;
+    }
+
+    if (!receiverSignature) {
+      setMessage(
+        "此單據沒有領款人簽名，不能保留簽名送回流程。請重新建立領款人簽名連結。"
+      );
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      await updateDoc(doc(db, "financeRecords", currentRecordId), {
+        ...form,
+        amount: Number(form.amount || 0),
+        amountChinese,
+        receiptImages,
+
+        receiverSignature,
+        hasReceiverSignature: true,
+
+        treasurerSignature: "",
+        presidentSignature: "",
+        hasTreasurerSignature: false,
+        hasPresidentSignature: false,
+
+        reviewedBy: "",
+        reviewedByName: "",
+        reviewedAt: null,
+
+        status: "pending_treasurer_signature",
+        updatedAt: serverTimestamp(),
+      });
+
+      setTreasurerSignature("");
+      setPresidentSignature("");
+      setCurrentStatus("pending_treasurer_signature");
+
+      setMessage(
+        "已保留領款人簽名並送回財務長 / 經手人簽名階段。請財務長重新簽章後再送社長審核。"
+      );
+
+      fetchRecords();
+    } catch (err) {
+      console.error("resubmit returned record error:", err);
+      setMessage("送回財務長簽名階段失敗。");
+    }
+
+    setLoading(false);
+  };
+
   const submitTreasurerSignature = async () => {
     if (!currentRecordId) {
       setMessage("請先從右側列表載入一筆單據。");
@@ -1064,7 +1145,9 @@ export default function FinancePage() {
 
       const safeActivityName = form.activityName || "財務單據";
       const safeDate = form.date || new Date().toISOString().slice(0, 10);
-      const fileName = `${safeDate}_${safeActivityName}_${form.expenseType}_${form.amount || 0}元.pdf`;
+      const fileName = `${safeDate}_${safeActivityName}_${form.expenseType}_${
+        form.amount || 0
+      }元.pdf`;
 
       pdf.save(fileName);
       setMessage("正式 PDF 已產生並下載。");
@@ -1123,11 +1206,12 @@ export default function FinancePage() {
           {currentStatus === "returned" ? (
             <div className="mt-4 rounded-2xl bg-orange-50 px-4 py-4 text-sm leading-7 text-orange-700">
               此單據已被社長退回。你可以直接修改原本資料，不需要重新建立整張單據。
-              修改完成後，請按「重新建立領款人簽名連結」，系統會清空舊簽名並重新跑簽核流程。
+              若只是備註、活動編號或小錯字，可保留領款人簽名並送回財務長確認；
+              若修改金額、領款人、收據或重要內容，建議重新建立領款人簽名連結。
             </div>
           ) : formLocked ? (
             <div className="mt-4 rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-red-700">
-              領款人已簽名，主要單據內容已鎖定。若需修改，請由社長退回後再重新建立領款人簽名連結。
+              領款人已簽名，主要單據內容已鎖定。若需修改，請由社長退回後再選擇是否重新建立領款人簽名連結。
             </div>
           ) : null}
 
@@ -1268,9 +1352,7 @@ export default function FinancePage() {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <h2 className="text-xl font-black text-slate-900">
-                領款人資料
-              </h2>
+              <h2 className="text-xl font-black text-slate-900">領款人資料</h2>
 
               <div className="mt-5 grid gap-5 md:grid-cols-2">
                 <div>
@@ -1491,6 +1573,17 @@ export default function FinancePage() {
                     儲存草稿
                   </button>
 
+                  {currentStatus === "returned" && receiverSignature ? (
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={resubmitReturnedRecordWithoutReceiverResign}
+                      className="rounded-xl bg-amber-600 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-700"
+                    >
+                      保留領款人簽名，送回財務長確認
+                    </button>
+                  ) : null}
+
                   <button
                     type="button"
                     disabled={loading}
@@ -1591,12 +1684,7 @@ export default function FinancePage() {
                           建立者：{item.createdByName || item.createdBy || "未知"}
                         </div>
 
-                        <div className="mt-2 text-sm text-slate-500">
-                          簽章進度：
-                          領款人 {item.hasReceiverSignature ? "✅" : "未簽"} ／
-                          財務長 {item.hasTreasurerSignature ? "✅" : "未簽"} ／
-                          社長 {item.hasPresidentSignature ? "✅" : "未簽"}
-                        </div>
+                        <SignatureProgress item={item} />
                       </div>
 
                       <span
