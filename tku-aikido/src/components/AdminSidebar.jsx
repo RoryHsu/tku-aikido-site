@@ -6,20 +6,24 @@ export default function AdminSidebar() {
   const role = profile?.role || "";
 
   const canManageRoles = role === "president";
+
   const canManageMembers = role === "president" || role === "vice";
-  const canManageFinance = role === "president" || role === "finance";
+
   const canManageEvents =
     role === "president" ||
     role === "vice" ||
     role === "finance" ||
     role === "activity" ||
     role === "pr";
+
   const canManageMedia =
     role === "president" ||
     role === "vice" ||
     role === "finance" ||
     role === "activity" ||
     role === "pr";
+
+  const canManageFinance = role === "president" || role === "finance";
 
   const navClass = ({ isActive }) =>
     `block rounded-2xl px-4 py-3 text-sm font-semibold transition ${
@@ -67,7 +71,7 @@ export default function AdminSidebar() {
 
         {canManageFinance ? (
           <NavLink to="/admin/finance" className={navClass}>
-            財務管理
+            領款收據管理
           </NavLink>
         ) : null}
       </nav>

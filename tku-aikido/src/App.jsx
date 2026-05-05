@@ -1,11 +1,4 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
-import MediaPage from "./pages/admin/MediaPage";
-import EventsPage from "./pages/admin/EventsPage";
-import RolesPage from "./pages/admin/RolesPage";
-import MembersPage from "./pages/admin/MembersPage";
-import ForgotPassword from "./pages/admin/ForgotPassword";
-import RoleRoute from "./routes/RoleRoute";
-import FinancePage from "./pages/admin/FinancePage";
 
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
@@ -21,9 +14,16 @@ import Events from "./pages/Events";
 import EventDetail from "./pages/EventDetail";
 
 import AdminLogin from "./pages/admin/AdminLogin";
+import ForgotPassword from "./pages/admin/ForgotPassword";
 import Dashboard from "./pages/admin/Dashboard";
+import RolesPage from "./pages/admin/RolesPage";
+import MembersPage from "./pages/admin/MembersPage";
+import EventsPage from "./pages/admin/EventsPage";
+import MediaPage from "./pages/admin/MediaPage";
+import FinancePage from "./pages/admin/FinancePage";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
+import RoleRoute from "./routes/RoleRoute";
 
 function PublicLayout({ children }) {
   return (
@@ -47,6 +47,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/about"
           element={
@@ -55,6 +56,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/coaches"
           element={
@@ -63,6 +65,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/classes"
           element={
@@ -71,6 +74,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/achievements"
           element={
@@ -79,6 +83,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/videos"
           element={
@@ -87,6 +92,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/contact"
           element={
@@ -95,6 +101,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/events"
           element={
@@ -103,6 +110,7 @@ export default function App() {
             </PublicLayout>
           }
         />
+
         <Route
           path="/events/:id"
           element={
@@ -166,17 +174,6 @@ export default function App() {
         />
 
         <Route
-          path="/admin/finance"
-          element={
-            <ProtectedRoute>
-              <RoleRoute allowRoles={["president", "finance"]}>
-                <FinancePage />
-              </RoleRoute>
-            </ProtectedRoute>
-          }
-        />
-
-        <Route
           path="/admin/media"
           element={
             <ProtectedRoute>
@@ -190,6 +187,17 @@ export default function App() {
                 ]}
               >
                 <MediaPage />
+              </RoleRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/admin/finance"
+          element={
+            <ProtectedRoute>
+              <RoleRoute allowRoles={["president", "finance"]}>
+                <FinancePage />
               </RoleRoute>
             </ProtectedRoute>
           }
