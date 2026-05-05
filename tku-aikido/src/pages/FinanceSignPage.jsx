@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { useParams, useSearchParams } from "react-router-dom";
+import { doc, getDoc, serverTimestamp, updateDoc } from "firebase/firestore";
 import { db } from "../lib/firebase";
 
-function SignaturePad({ value, onChange }) {
+function SignaturePad({ label, value, onChange }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
 
@@ -12,8 +12,9 @@ function SignaturePad({ value, onChange }) {
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.strokeStyle = "#111827";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -49,6 +50,7 @@ function SignaturePad({ value, onChange }) {
 
   const startDrawing = (event) => {
     event.preventDefault();
+    event.stopPropagation();
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -63,6 +65,7 @@ function SignaturePad({ value, onChange }) {
     if (!drawingRef.current) return;
 
     event.preventDefault();
+    event.stopPropagation();
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -72,7 +75,12 @@ function SignaturePad({ value, onChange }) {
     ctx.stroke();
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = (event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
     if (!drawingRef.current) return;
 
     drawingRef.current = false;
@@ -90,79 +98,120 @@ function SignaturePad({ value, onChange }) {
   };
 
   return (
-    <div>
-      <canvas
-        ref={canvasRef}
-        width={720}
-        height={240}
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
-        onTouchStart={startDrawing}
-        onTouchMove={draw}
-        onTouchEnd={stopDrawing}
-        className="h-52 w-full rounded-2xl border border-dashed border-slate-300 bg-white"
-      />
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-sm font-semibold text-slate-700">{label}</div>
 
-      <button
-        type="button"
-        onClick={clearSignature}
-        className="mt-3 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700"
-      >
-        清除簽名
-      </button>
+        <button
+          type="button"
+          onClick={clearSignature}
+          className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+        >
+          清除
+        </button>
+      </div>
+
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-2">
+        <canvas
+          ref={canvasRef}
+          width={720}
+          height={220}
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={draw}
+          onTouchEnd={stopDrawing}
+          className="h-40 w-full touch-none rounded-lg bg-white"
+          style={{
+            touchAction: "none",
+            overscrollBehavior: "contain",
+          }}
+        />
+      </div>
+
+      <p className="mt-3 text-xs leading-6 text-slate-500">
+        手機簽名時，簽名框內已鎖定滑動。請直接在白色區域內簽名。
+      </p>
     </div>
   );
 }
 
+const statusLabelMap = {
+  draft: "草稿",
+  pending_receiver_signature: "待領款人簽名",
+  pending_treasurer_signature: "待財務長 / 經手人簽名",
+  pending_president_review: "待社長簽名審核",
+  approved: "已完成",
+  returned: "退回修改",
+  rejected: "已拒絕",
+};
+
 export default function FinanceSignPage() {
   const { recordId } = useParams();
   const [searchParams] = useSearchParams();
-  const token = searchParams.get("token");
+
+  const token = searchParams.get("token") || "";
 
   const [record, setRecord] = useState(null);
   const [signature, setSignature] = useState("");
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     const fetchRecord = async () => {
       setLoading(true);
+      setMessage("");
 
       try {
-        const ref = doc(db, "financeRecords", recordId);
-        const snapshot = await getDoc(ref);
+        if (!recordId || !token) {
+          setMessage("簽名連結不完整，請確認網址是否正確。");
+          setLoading(false);
+          return;
+        }
 
-        if (!snapshot.exists()) {
-          setMessage("找不到這張財務證明單。");
+        const ref = doc(db, "financeRecords", recordId);
+        const snap = await getDoc(ref);
+
+        if (!snap.exists()) {
+          setMessage("找不到這份財務證明。");
           setLoading(false);
           return;
         }
 
         const data = {
-          id: snapshot.id,
-          ...snapshot.data(),
+          id: snap.id,
+          ...snap.data(),
         };
 
-        if (!token || data.receiverSignatureToken !== token) {
-          setMessage("簽名連結無效，請向財務長確認最新連結。");
+        if (data.receiverSignatureToken !== token) {
+          setMessage("簽名連結驗證失敗。請使用財務長提供的最新連結。");
           setLoading(false);
           return;
         }
 
         if (data.status !== "pending_receiver_signature") {
-          setMessage("此單據目前不在領款人簽名階段，請向財務長確認。");
+          setRecord(data);
+
+          if (data.hasReceiverSignature) {
+            setSignature(data.receiverSignature || "");
+            setMessage("這份財務證明已完成領款人簽名，無需重複簽名。");
+          } else {
+            setMessage(
+              `此單據目前狀態為「${statusLabelMap[data.status] || data.status}」，暫時不能由領款人簽名。`
+            );
+          }
+
           setLoading(false);
           return;
         }
 
         setRecord(data);
-        setSignature(data.receiverSignature || "");
-      } catch (err) {
-        console.error("fetch sign record error:", err);
-        setMessage("讀取單據失敗。");
+      } catch (error) {
+        console.error("fetch finance sign record error:", error);
+        setMessage("讀取財務證明失敗，請稍後再試。");
       }
 
       setLoading(false);
@@ -172,139 +221,232 @@ export default function FinanceSignPage() {
   }, [recordId, token]);
 
   const submitSignature = async () => {
-    if (!signature) {
-      setMessage("請先完成簽名。");
+    setMessage("");
+
+    if (!record) {
+      setMessage("找不到財務證明資料。");
       return;
     }
 
-    setSaving(true);
-    setMessage("");
+    if (record.receiverSignatureToken !== token) {
+      setMessage("簽名連結驗證失敗。");
+      return;
+    }
+
+    if (record.status !== "pending_receiver_signature") {
+      setMessage("此單據目前不能由領款人簽名。");
+      return;
+    }
+
+    if (!signature || !signature.startsWith("data:image/")) {
+      setMessage("請先在簽名框內完成簽名。");
+      return;
+    }
+
+    setSubmitting(true);
 
     try {
-      await updateDoc(doc(db, "financeRecords", recordId), {
+      await updateDoc(doc(db, "financeRecords", record.id), {
         receiverSignature: signature,
         hasReceiverSignature: true,
         receiverSignedAt: serverTimestamp(),
         status: "pending_treasurer_signature",
         updatedAt: serverTimestamp(),
+        receiverSignatureToken: token,
       });
 
-      setMessage("簽名已送出。接下來請等待財務長 / 經手人簽章。");
-    } catch (err) {
-      console.error("submit signature error:", err);
+      setRecord((prev) => ({
+        ...prev,
+        receiverSignature: signature,
+        hasReceiverSignature: true,
+        status: "pending_treasurer_signature",
+      }));
+
+      setMessage("簽名完成。此單據已送回財務長 / 經手人簽章。");
+    } catch (error) {
+      console.error("submit receiver signature error:", error);
       setMessage("簽名送出失敗，請稍後再試。");
     }
 
-    setSaving(false);
+    setSubmitting(false);
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-100 px-6 py-10 text-slate-600">
-        載入中...
+      <div className="min-h-screen bg-slate-100 px-5 py-10">
+        <div className="mx-auto max-w-3xl rounded-3xl bg-white p-8 shadow-sm">
+          <div className="text-slate-500">讀取財務證明中...</div>
+        </div>
       </div>
     );
   }
 
   if (!record) {
     return (
-      <div className="min-h-screen bg-slate-100 px-6 py-10">
-        <div className="mx-auto max-w-2xl rounded-3xl bg-white p-8 shadow-sm">
-          <h1 className="text-3xl font-black text-slate-900">無法簽名</h1>
-          <p className="mt-4 leading-8 text-slate-600">{message}</p>
+      <div className="min-h-screen bg-slate-100 px-5 py-10">
+        <div className="mx-auto max-w-3xl rounded-3xl bg-white p-8 shadow-sm">
+          <div className="text-sm font-bold tracking-[0.2em] text-red-600">
+            SIGNATURE ERROR
+          </div>
+
+          <h1 className="mt-3 text-3xl font-black text-slate-900">
+            無法進行簽名
+          </h1>
+
+          <p className="mt-4 leading-8 text-slate-600">
+            {message || "簽名連結無效。"}
+          </p>
         </div>
       </div>
     );
   }
 
+  const canSign =
+    record.status === "pending_receiver_signature" &&
+    record.receiverSignatureToken === token &&
+    !record.hasReceiverSignature;
+
   return (
-    <div className="min-h-screen bg-slate-100 px-6 py-10">
-      <div className="mx-auto max-w-3xl rounded-3xl bg-white p-8 shadow-sm">
-        <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-          TKU AIKIDO FINANCE SIGNATURE
-        </div>
-
-        <h1 className="mt-3 text-3xl font-black text-slate-900">
-          領款人線上簽名
-        </h1>
-
-        <p className="mt-4 leading-8 text-slate-600">
-          請確認下方財務證明內容無誤後，在簽名區手寫簽名並送出。
-        </p>
-
-        <div className="mt-8 rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <div className="grid gap-4 text-sm text-slate-700 md:grid-cols-2">
-            <div>
-              <span className="font-semibold">所屬活動：</span>
-              {record.activityName || "未填寫"}
-            </div>
-
-            <div>
-              <span className="font-semibold">活動編號：</span>
-              {record.activityCode || "未填寫"}
-            </div>
-
-            <div>
-              <span className="font-semibold">費用類別：</span>
-              {record.expenseType || "未填寫"}
-            </div>
-
-            <div>
-              <span className="font-semibold">金額：</span>
-              NT$ {record.amount || 0}
-            </div>
-
-            <div>
-              <span className="font-semibold">新台幣大寫：</span>
-              {record.amountChinese || ""}
-            </div>
-
-            <div>
-              <span className="font-semibold">領款人：</span>
-              {record.receiverName || "未填寫"}
-            </div>
-
-            <div>
-              <span className="font-semibold">身分別：</span>
-              {record.receiverType || "未填寫"}
-            </div>
-
-            <div>
-              <span className="font-semibold">學號 / 身分證號：</span>
-              {record.studentId || "未填寫"}
-            </div>
+    <div className="min-h-screen bg-slate-100 px-5 py-10">
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div className="rounded-3xl bg-white p-8 shadow-sm">
+          <div className="text-sm font-bold uppercase tracking-[0.22em] text-amber-700">
+            TKU AIKIDO FINANCE SIGNATURE
           </div>
 
-          {record.description ? (
-            <div className="mt-5 border-t border-slate-200 pt-5 text-sm leading-7 text-slate-700">
-              <span className="font-semibold">費用明細：</span>
-              {record.description}
+          <h1 className="mt-3 text-3xl font-black text-slate-900">
+            領款人線上簽名
+          </h1>
+
+          <p className="mt-4 leading-8 text-slate-600">
+            請確認下方財務證明內容無誤後，在簽名框內完成簽名並送出。
+          </p>
+
+          {message ? (
+            <div className="mt-5 rounded-2xl bg-slate-100 px-4 py-4 text-sm leading-7 text-slate-700">
+              {message}
             </div>
           ) : null}
         </div>
 
-        <div className="mt-8">
-          <div className="mb-3 text-sm font-semibold text-slate-700">
-            領款人簽章
+        <div className="rounded-3xl bg-white p-8 shadow-sm">
+          <h2 className="text-2xl font-black text-slate-900">財務證明內容</h2>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">所屬活動</div>
+              <div className="mt-2 font-bold text-slate-900">
+                {record.activityName || "未填寫"}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">費用類別</div>
+              <div className="mt-2 font-bold text-slate-900">
+                {record.expenseType || "未填寫"}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">金額</div>
+              <div className="mt-2 font-bold text-slate-900">
+                NT$ {record.amount || 0}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">新台幣大寫</div>
+              <div className="mt-2 font-bold text-slate-900">
+                {record.amountChinese || "未填寫"}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">領款人</div>
+              <div className="mt-2 font-bold text-slate-900">
+                {record.receiverName || "未填寫"}
+              </div>
+            </div>
+
+            <div className="rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">
+                學號 / 身分證號
+              </div>
+              <div className="mt-2 font-bold text-slate-900">
+                {record.studentId || "未填寫"}
+              </div>
+            </div>
           </div>
 
-          <SignaturePad value={signature} onChange={setSignature} />
+          {record.description ? (
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4">
+              <div className="text-xs font-semibold text-slate-500">
+                費用明細說明
+              </div>
+              <div className="mt-2 leading-7 text-slate-800">
+                {record.description}
+              </div>
+            </div>
+          ) : null}
+
+          {record.receiptImages?.length > 0 ? (
+            <div className="mt-6">
+              <div className="mb-3 text-sm font-semibold text-slate-700">
+                發票 / 收據附件：共 {record.receiptImages.length} 張
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {record.receiptImages.map((item, index) => (
+                  <div
+                    key={index}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 p-3"
+                  >
+                    <img
+                      src={item}
+                      alt={`收據 ${index + 1}`}
+                      className="h-48 w-full rounded-xl bg-white object-contain"
+                    />
+
+                    <div className="mt-2 text-center text-xs font-semibold text-slate-500">
+                      收據 / 發票 {index + 1}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </div>
 
-        {message ? (
-          <div className="mt-5 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
-            {message}
-          </div>
-        ) : null}
+        <SignaturePad
+          label="領款人簽名"
+          value={signature}
+          onChange={setSignature}
+        />
 
-        <button
-          type="button"
-          disabled={saving}
-          onClick={submitSignature}
-          className="mt-6 w-full rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white hover:bg-slate-800"
-        >
-          {saving ? "送出中..." : "確認並送出簽名"}
-        </button>
+        <div className="rounded-3xl bg-white p-8 shadow-sm">
+          <button
+            type="button"
+            disabled={!canSign || submitting}
+            onClick={submitSignature}
+            className={`w-full rounded-2xl px-6 py-4 text-base font-bold ${
+              canSign && !submitting
+                ? "bg-slate-900 text-white hover:bg-slate-800"
+                : "cursor-not-allowed bg-slate-300 text-slate-500"
+            }`}
+          >
+            {submitting ? "送出中..." : "確認簽名並送出"}
+          </button>
+
+          {!canSign ? (
+            <p className="mt-4 text-center text-sm leading-7 text-slate-500">
+              此連結目前不可簽名，可能已簽署完成或單據狀態已變更。
+            </p>
+          ) : (
+            <p className="mt-4 text-center text-sm leading-7 text-slate-500">
+              送出後，單據會交由財務長 / 經手人進行下一步簽章。
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

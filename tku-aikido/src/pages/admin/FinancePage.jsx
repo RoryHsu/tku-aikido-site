@@ -207,8 +207,9 @@ function SignaturePad({ label, value, onChange }) {
     if (!canvas) return;
 
     const ctx = canvas.getContext("2d");
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
     ctx.strokeStyle = "#111827";
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -244,6 +245,7 @@ function SignaturePad({ label, value, onChange }) {
 
   const startDrawing = (event) => {
     event.preventDefault();
+    event.stopPropagation();
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -258,6 +260,7 @@ function SignaturePad({ label, value, onChange }) {
     if (!drawingRef.current) return;
 
     event.preventDefault();
+    event.stopPropagation();
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -267,7 +270,12 @@ function SignaturePad({ label, value, onChange }) {
     ctx.stroke();
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = (event) => {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
     if (!drawingRef.current) return;
 
     drawingRef.current = false;
@@ -298,22 +306,28 @@ function SignaturePad({ label, value, onChange }) {
         </button>
       </div>
 
-      <canvas
-        ref={canvasRef}
-        width={520}
-        height={160}
-        onMouseDown={startDrawing}
-        onMouseMove={draw}
-        onMouseUp={stopDrawing}
-        onMouseLeave={stopDrawing}
-        onTouchStart={startDrawing}
-        onTouchMove={draw}
-        onTouchEnd={stopDrawing}
-        className="h-32 w-full rounded-xl border border-dashed border-slate-300 bg-slate-50"
-      />
+      <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-2">
+        <canvas
+          ref={canvasRef}
+          width={720}
+          height={220}
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={draw}
+          onTouchEnd={stopDrawing}
+          className="h-36 w-full touch-none rounded-lg bg-white"
+          style={{
+            touchAction: "none",
+            overscrollBehavior: "contain",
+          }}
+        />
+      </div>
 
-      <p className="mt-2 text-xs text-slate-400">
-        可使用滑鼠、觸控板或手機觸控手寫簽名。
+      <p className="mt-2 text-xs leading-6 text-slate-400">
+        手機簽名時，簽名框內已鎖定滑動。請直接在白色區域內簽名。
       </p>
     </div>
   );
@@ -536,7 +550,7 @@ function FinancePdfTemplate({
                   minHeight: "305px",
                   padding: "10px",
                   display: "grid",
-                  gridTemplateColumns: receipts.length > 1 ? "1fr 1fr" : "1fr",
+                  gridTemplateColumns: receipts.length >= 2 ? "1fr 1fr" : "1fr",
                   gap: "10px",
                 }}
               >
@@ -558,7 +572,7 @@ function FinancePdfTemplate({
                         alt={`收據 ${index + 1}`}
                         style={{
                           maxWidth: "100%",
-                          maxHeight: receipts.length > 1 ? "140px" : "280px",
+                          maxHeight: receipts.length >= 2 ? "135px" : "280px",
                           objectFit: "contain",
                         }}
                       />
@@ -746,6 +760,18 @@ export default function FinancePage() {
     }
 
     setReceiptImages((prev) => [...prev, ...imageUrls]);
+    event.target.value = "";
+  };
+
+  const removeReceiptImage = (indexToRemove) => {
+    if (formLocked) {
+      setMessage("領款人簽名後，單據內容已鎖定，不能刪除收據。");
+      return;
+    }
+
+    setReceiptImages((prev) =>
+      prev.filter((_, index) => index !== indexToRemove)
+    );
   };
 
   const clearForm = () => {
@@ -1282,9 +1308,15 @@ export default function FinancePage() {
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                上傳發票 / 收據 JPG
-              </label>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="block text-sm font-semibold text-slate-700">
+                  上傳發票 / 收據 JPG
+                </label>
+
+                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                  已上傳 {receiptImages.length} 張
+                </div>
+              </div>
 
               <input
                 disabled={formLocked}
@@ -1292,25 +1324,47 @@ export default function FinancePage() {
                 accept="image/*"
                 multiple
                 onChange={handleReceiptUpload}
-                className="block w-full rounded-xl border border-slate-300 px-4 py-3 text-sm disabled:bg-slate-100"
+                className="mt-3 block w-full rounded-xl border border-slate-300 px-4 py-3 text-sm disabled:bg-slate-100"
               />
+
+              <p className="mt-2 text-xs leading-6 text-slate-400">
+                可一次選擇多張圖片。Windows 可按住 Ctrl 選多張；也可以分批上傳，系統會自動累加。
+              </p>
 
               {receiptImages.length > 0 ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   {receiptImages.map((item, index) => (
                     <div
-                      key={index}
-                      className="rounded-xl border border-slate-200 p-2"
+                      key={`${item.slice(0, 30)}-${index}`}
+                      className="relative rounded-xl border border-slate-200 bg-slate-50 p-2"
                     >
+                      {!formLocked ? (
+                        <button
+                          type="button"
+                          onClick={() => removeReceiptImage(index)}
+                          className="absolute right-2 top-2 rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white shadow hover:bg-red-700"
+                        >
+                          刪除
+                        </button>
+                      ) : null}
+
                       <img
                         src={item}
                         alt={`收據 ${index + 1}`}
-                        className="h-36 w-full rounded-lg object-contain"
+                        className="h-40 w-full rounded-lg bg-white object-contain"
                       />
+
+                      <div className="mt-2 text-center text-xs font-semibold text-slate-500">
+                        收據 / 發票 {index + 1}
+                      </div>
                     </div>
                   ))}
                 </div>
-              ) : null}
+              ) : (
+                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                  尚未上傳收據或發票。
+                </div>
+              )}
             </div>
 
             {currentStatus === "pending_treasurer_signature" ||
