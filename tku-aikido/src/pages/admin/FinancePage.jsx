@@ -424,10 +424,7 @@ function FinancePdfTemplate({
             <td style={pdfValueCell}>
               {subsidyTypeOptions.map((item) => (
                 <div key={item} style={{ marginBottom: "4px" }}>
-                  <PdfCheckbox
-                    checked={form.subsidyType === item}
-                    label={item}
-                  />
+                  <PdfCheckbox checked={form.subsidyType === item} label={item} />
                 </div>
               ))}
             </td>
@@ -682,11 +679,18 @@ export default function FinancePage() {
   }, [form.amount]);
 
   const hasReceiverSigned = Boolean(receiverSignature);
+
   const formLocked =
     hasReceiverSigned ||
     currentStatus === "pending_treasurer_signature" ||
     currentStatus === "pending_president_review" ||
     currentStatus === "approved";
+
+  const canGeneratePdf =
+    currentStatus === "approved" &&
+    Boolean(receiverSignature) &&
+    Boolean(treasurerSignature) &&
+    Boolean(presidentSignature);
 
   useEffect(() => {
     const savedSeal = localStorage.getItem("tkuAikidoClubSeal");
@@ -971,6 +975,13 @@ export default function FinancePage() {
   const generatePdf = async () => {
     setMessage("");
 
+    if (!canGeneratePdf) {
+      setMessage(
+        "流程尚未完成。必須完成領款人簽名、財務長簽名、社長簽名並核准後，才能產生正式 PDF。"
+      );
+      return;
+    }
+
     if (!pdfRef.current) {
       setMessage("找不到 PDF 模板。");
       return;
@@ -996,7 +1007,7 @@ export default function FinancePage() {
       const fileName = `${safeDate}_${safeActivityName}_${form.expenseType}_${form.amount || 0}元.pdf`;
 
       pdf.save(fileName);
-      setMessage("PDF 已產生並下載。");
+      setMessage("正式 PDF 已產生並下載。");
     } catch (err) {
       console.error("generate pdf error:", err);
       setMessage("PDF 產生失敗。");
@@ -1366,6 +1377,18 @@ export default function FinancePage() {
               </div>
             ) : null}
 
+            <div
+              className={`rounded-2xl px-4 py-4 text-sm leading-7 ${
+                canGeneratePdf
+                  ? "bg-green-50 text-green-700"
+                  : "bg-slate-50 text-slate-500"
+              }`}
+            >
+              {canGeneratePdf
+                ? "流程已完成，可以產生正式 PDF。"
+                : "必須完成領款人簽名、財務長 / 經手人簽名、社長簽名並核准後，才能產生正式 PDF。"}
+            </div>
+
             <div className="flex flex-wrap gap-3">
               {!formLocked ? (
                 <>
@@ -1413,10 +1436,15 @@ export default function FinancePage() {
 
               <button
                 type="button"
+                disabled={!canGeneratePdf}
                 onClick={generatePdf}
-                className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800"
+                className={`rounded-xl px-5 py-3 text-sm font-semibold ${
+                  canGeneratePdf
+                    ? "bg-slate-900 text-white hover:bg-slate-800"
+                    : "cursor-not-allowed bg-slate-300 text-slate-500"
+                }`}
               >
-                產生 PDF
+                產生正式 PDF
               </button>
 
               <button
@@ -1548,7 +1576,7 @@ export default function FinancePage() {
             </h2>
 
             <p className="mt-4 leading-8 text-slate-600">
-              下方是即將輸出的財務證明版面。先載入單據，再產生 PDF。
+              下方是即將輸出的財務證明版面。必須完成完整簽核流程後，才能產生正式 PDF。
             </p>
 
             <div className="mt-6 overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-4">
