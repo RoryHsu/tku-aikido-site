@@ -678,12 +678,14 @@ export default function FinancePage() {
   }, [form.amount]);
 
   const hasReceiverSigned = Boolean(receiverSignature);
+  const isReturned = currentStatus === "returned";
 
   const formLocked =
-    hasReceiverSigned ||
-    currentStatus === "pending_treasurer_signature" ||
-    currentStatus === "pending_president_review" ||
-    currentStatus === "approved";
+    !isReturned &&
+    (hasReceiverSigned ||
+      currentStatus === "pending_treasurer_signature" ||
+      currentStatus === "pending_president_review" ||
+      currentStatus === "approved");
 
   const canGeneratePdf =
     currentStatus === "approved" &&
@@ -811,13 +813,38 @@ export default function FinancePage() {
     setMessage("");
 
     try {
+      const isCreatingReceiverSignatureRequest =
+        status === "pending_receiver_signature";
+
       let nextToken = receiverSignatureToken;
 
-      if (status === "pending_receiver_signature" && !nextToken) {
+      if (isCreatingReceiverSignatureRequest) {
         nextToken = createSignatureToken();
       }
 
-      const payload = buildRecordPayload(status, nextToken);
+      const basePayload = buildRecordPayload(status, nextToken);
+
+      const payload = isCreatingReceiverSignatureRequest
+        ? {
+            ...basePayload,
+
+            receiverSignature: "",
+            treasurerSignature: "",
+            presidentSignature: "",
+
+            hasReceiverSignature: false,
+            hasTreasurerSignature: false,
+            hasPresidentSignature: false,
+
+            receiverSignedAt: null,
+            reviewedBy: "",
+            reviewedByName: "",
+            reviewedAt: null,
+
+            receiverSignatureToken: nextToken,
+            status: "pending_receiver_signature",
+          }
+        : basePayload;
 
       if (currentRecordId) {
         await updateDoc(doc(db, "financeRecords", currentRecordId), {
@@ -840,8 +867,16 @@ export default function FinancePage() {
         setReceiverSignatureToken(nextToken);
       }
 
-      if (status === "pending_receiver_signature") {
-        setMessage("已建立領款人簽名連結，請到右側列表複製連結給領款人。");
+      if (isCreatingReceiverSignatureRequest) {
+        setReceiverSignature("");
+        setTreasurerSignature("");
+        setPresidentSignature("");
+
+        setMessage(
+          currentStatus === "returned"
+            ? "已重新建立領款人簽名連結。舊簽名已清空，請將新連結傳給領款人重新簽名。"
+            : "已建立領款人簽名連結，請到右側列表複製連結給領款人。"
+        );
       } else {
         setMessage("單據已儲存。");
       }
@@ -1085,9 +1120,14 @@ export default function FinancePage() {
             </div>
           )}
 
-          {formLocked ? (
+          {currentStatus === "returned" ? (
+            <div className="mt-4 rounded-2xl bg-orange-50 px-4 py-4 text-sm leading-7 text-orange-700">
+              此單據已被社長退回。你可以直接修改原本資料，不需要重新建立整張單據。
+              修改完成後，請按「重新建立領款人簽名連結」，系統會清空舊簽名並重新跑簽核流程。
+            </div>
+          ) : formLocked ? (
             <div className="mt-4 rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-red-700">
-              領款人已簽名，主要單據內容已鎖定。若要修改金額、領款人或收據，請建立新單據重新簽名。
+              領款人已簽名，主要單據內容已鎖定。若需修改，請由社長退回後再重新建立領款人簽名連結。
             </div>
           ) : null}
 
@@ -1457,7 +1497,9 @@ export default function FinancePage() {
                     onClick={() => saveRecord("pending_receiver_signature")}
                     className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
                   >
-                    建立領款人簽名連結
+                    {currentStatus === "returned"
+                      ? "重新建立領款人簽名連結"
+                      : "建立領款人簽名連結"}
                   </button>
                 </>
               ) : null}
