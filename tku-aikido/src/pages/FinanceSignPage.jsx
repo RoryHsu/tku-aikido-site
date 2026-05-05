@@ -15,7 +15,6 @@ function SignaturePad({ value, onChange }) {
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
     ctx.strokeStyle = "#111827";
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (value) {
@@ -153,6 +152,12 @@ export default function FinanceSignPage() {
           return;
         }
 
+        if (data.status !== "pending_receiver_signature") {
+          setMessage("此單據目前不在領款人簽名階段，請向財務長確認。");
+          setLoading(false);
+          return;
+        }
+
         setRecord(data);
         setSignature(data.receiverSignature || "");
       } catch (err) {
@@ -180,11 +185,11 @@ export default function FinanceSignPage() {
         receiverSignature: signature,
         hasReceiverSignature: true,
         receiverSignedAt: serverTimestamp(),
-        status: "pending_review",
+        status: "pending_treasurer_signature",
         updatedAt: serverTimestamp(),
       });
 
-      setMessage("簽名已送出，請通知財務長或社長進行後續審核。");
+      setMessage("簽名已送出。接下來請等待財務長 / 經手人簽章。");
     } catch (err) {
       console.error("submit signature error:", err);
       setMessage("簽名送出失敗，請稍後再試。");

@@ -22,18 +22,20 @@ const receiverTypeOptions = ["淡江合氣道社員", "非社員"];
 const statusLabelMap = {
   draft: "草稿",
   pending_receiver_signature: "待領款人簽名",
-  pending_review: "待社長審核",
+  pending_treasurer_signature: "待財務長 / 經手人簽名",
+  pending_president_review: "待社長簽名審核",
+  approved: "已完成",
   returned: "退回修改",
-  approved: "已核准",
   rejected: "已拒絕",
 };
 
 const statusClassMap = {
   draft: "bg-slate-100 text-slate-700",
   pending_receiver_signature: "bg-blue-100 text-blue-700",
-  pending_review: "bg-amber-100 text-amber-700",
-  returned: "bg-orange-100 text-orange-700",
+  pending_treasurer_signature: "bg-purple-100 text-purple-700",
+  pending_president_review: "bg-amber-100 text-amber-700",
   approved: "bg-green-100 text-green-700",
+  returned: "bg-orange-100 text-orange-700",
   rejected: "bg-red-100 text-red-700",
 };
 
@@ -75,23 +77,10 @@ const pdfSignatureCell = {
 };
 
 function toTaiwanYear(dateString) {
-  if (!dateString) {
-    return {
-      year: "",
-      month: "",
-      day: "",
-    };
-  }
+  if (!dateString) return { year: "", month: "", day: "" };
 
   const date = new Date(dateString);
-
-  if (Number.isNaN(date.getTime())) {
-    return {
-      year: "",
-      month: "",
-      day: "",
-    };
-  }
+  if (Number.isNaN(date.getTime())) return { year: "", month: "", day: "" };
 
   return {
     year: String(date.getFullYear() - 1911),
@@ -103,12 +92,9 @@ function toTaiwanYear(dateString) {
 function numberToChineseAmount(inputAmount) {
   const amount = Number(inputAmount);
 
-  if (!Number.isFinite(amount) || amount <= 0) {
-    return "";
-  }
+  if (!Number.isFinite(amount) || amount <= 0) return "";
 
   const num = Math.floor(amount);
-
   if (num === 0) return "零元整";
 
   const digitMap = ["零", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖"];
@@ -123,9 +109,7 @@ function numberToChineseAmount(inputAmount) {
       const digit = section % 10;
 
       if (digit === 0) {
-        if (result !== "") {
-          zeroFlag = true;
-        }
+        if (result !== "") zeroFlag = true;
       } else {
         if (zeroFlag) {
           result = digitMap[0] + result;
@@ -181,7 +165,6 @@ function readFileAsDataUrl(file) {
     }
 
     const reader = new FileReader();
-
     reader.onload = () => resolve(reader.result);
     reader.onerror = reject;
     reader.readAsDataURL(file);
@@ -226,7 +209,6 @@ function SignaturePad({ label, value, onChange }) {
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
     ctx.strokeStyle = "#111827";
-
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (value) {
@@ -676,6 +658,8 @@ export default function FinancePage() {
   const { currentUser, profile } = useAuth();
   const pdfRef = useRef(null);
 
+  const [currentRecordId, setCurrentRecordId] = useState("");
+  const [currentStatus, setCurrentStatus] = useState("");
   const [form, setForm] = useState(initialForm);
   const [records, setRecords] = useState([]);
   const [receiptImages, setReceiptImages] = useState([]);
@@ -683,6 +667,7 @@ export default function FinancePage() {
   const [treasurerSignature, setTreasurerSignature] = useState("");
   const [presidentSignature, setPresidentSignature] = useState("");
   const [clubSeal, setClubSeal] = useState("");
+  const [receiverSignatureToken, setReceiverSignatureToken] = useState("");
 
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -696,11 +681,16 @@ export default function FinancePage() {
     return numberToChineseAmount(form.amount);
   }, [form.amount]);
 
+  const hasReceiverSigned = Boolean(receiverSignature);
+  const formLocked =
+    hasReceiverSigned ||
+    currentStatus === "pending_treasurer_signature" ||
+    currentStatus === "pending_president_review" ||
+    currentStatus === "approved";
+
   useEffect(() => {
     const savedSeal = localStorage.getItem("tkuAikidoClubSeal");
-    if (savedSeal) {
-      setClubSeal(savedSeal);
-    }
+    if (savedSeal) setClubSeal(savedSeal);
 
     fetchRecords();
   }, []);
@@ -737,8 +727,12 @@ export default function FinancePage() {
   };
 
   const handleReceiptUpload = async (event) => {
-    const files = Array.from(event.target.files || []);
+    if (formLocked) {
+      setMessage("領款人簽名後，單據內容已鎖定，不能再修改收據。");
+      return;
+    }
 
+    const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
 
     const imageUrls = [];
@@ -762,6 +756,9 @@ export default function FinancePage() {
   };
 
   const clearForm = () => {
+    setCurrentRecordId("");
+    setCurrentStatus("");
+    setReceiverSignatureToken("");
     setForm(initialForm);
     setReceiptImages([]);
     setReceiverSignature("");
@@ -770,44 +767,64 @@ export default function FinancePage() {
     setMessage("");
   };
 
+  const buildRecordPayload = (status, token) => ({
+    ...form,
+    amount: Number(form.amount || 0),
+    amountChinese,
+    receiptImages,
+    receiverSignature,
+    treasurerSignature,
+    presidentSignature,
+    hasReceiverSignature: Boolean(receiverSignature),
+    hasTreasurerSignature: Boolean(treasurerSignature),
+    hasPresidentSignature: Boolean(presidentSignature),
+    hasClubSeal: Boolean(clubSeal),
+    receiverSignatureToken: token || receiverSignatureToken || "",
+    receiverSignedAt: receiverSignature ? serverTimestamp() : null,
+    status,
+    createdBy: currentUser?.email || "",
+    createdByName: profile?.name || "",
+    updatedAt: serverTimestamp(),
+  });
+
   const saveRecord = async (status = "draft") => {
     setLoading(true);
     setMessage("");
 
     try {
-      const receiverSignatureToken =
-        status === "pending_receiver_signature" ? createSignatureToken() : "";
+      let nextToken = receiverSignatureToken;
 
-      await addDoc(collection(db, "financeRecords"), {
-        ...form,
-        amount: Number(form.amount || 0),
-        amountChinese,
-        receiptImages,
-        receiverSignature,
-        treasurerSignature,
-        presidentSignature,
-        hasReceiverSignature: Boolean(receiverSignature),
-        hasTreasurerSignature: Boolean(treasurerSignature),
-        hasPresidentSignature: Boolean(presidentSignature),
-        hasClubSeal: Boolean(clubSeal),
-        receiverSignatureToken,
-        receiverSignedAt: null,
-        status,
-        createdBy: currentUser?.email || "",
-        createdByName: profile?.name || "",
-        reviewedBy: "",
-        reviewedByName: "",
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-        reviewedAt: null,
-      });
+      if (status === "pending_receiver_signature" && !nextToken) {
+        nextToken = createSignatureToken();
+      }
+
+      const payload = buildRecordPayload(status, nextToken);
+
+      if (currentRecordId) {
+        await updateDoc(doc(db, "financeRecords", currentRecordId), {
+          ...payload,
+        });
+
+        setCurrentStatus(status);
+        setReceiverSignatureToken(nextToken);
+      } else {
+        const docRef = await addDoc(collection(db, "financeRecords"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          reviewedBy: "",
+          reviewedByName: "",
+          reviewedAt: null,
+        });
+
+        setCurrentRecordId(docRef.id);
+        setCurrentStatus(status);
+        setReceiverSignatureToken(nextToken);
+      }
 
       if (status === "pending_receiver_signature") {
-        setMessage("已建立單據，請到右側列表複製領款人簽名連結。");
-      } else if (status === "pending_review") {
-        setMessage("已送出社長審核。");
+        setMessage("已建立領款人簽名連結，請到右側列表複製連結給領款人。");
       } else {
-        setMessage("草稿已儲存。");
+        setMessage("單據已儲存。");
       }
 
       fetchRecords();
@@ -820,6 +837,10 @@ export default function FinancePage() {
   };
 
   const loadRecordToForm = (record) => {
+    setCurrentRecordId(record.id);
+    setCurrentStatus(record.status || "");
+    setReceiverSignatureToken(record.receiverSignatureToken || "");
+
     setForm({
       activityName: record.activityName || "",
       activityCode: record.activityCode || "",
@@ -841,7 +862,87 @@ export default function FinancePage() {
     setTreasurerSignature(record.treasurerSignature || "");
     setPresidentSignature(record.presidentSignature || "");
 
-    setMessage("已載入單據，可檢查內容後產生 PDF。");
+    setMessage("已載入單據。");
+  };
+
+  const submitTreasurerSignature = async () => {
+    if (!currentRecordId) {
+      setMessage("請先從右側列表載入一筆單據。");
+      return;
+    }
+
+    if (!receiverSignature) {
+      setMessage("領款人尚未簽名，不能進入財務長簽名階段。");
+      return;
+    }
+
+    if (!treasurerSignature) {
+      setMessage("請先完成財務長 / 經手人簽章。");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      await updateDoc(doc(db, "financeRecords", currentRecordId), {
+        treasurerSignature,
+        hasTreasurerSignature: true,
+        status: "pending_president_review",
+        updatedAt: serverTimestamp(),
+      });
+
+      setCurrentStatus("pending_president_review");
+      setMessage("財務長簽名已完成，已送出社長簽名審核。");
+      fetchRecords();
+    } catch (err) {
+      console.error("submit treasurer signature error:", err);
+      setMessage("送出社長審核失敗。");
+    }
+
+    setLoading(false);
+  };
+
+  const approveByPresident = async () => {
+    if (!currentRecordId) {
+      setMessage("請先從右側列表載入一筆單據。");
+      return;
+    }
+
+    if (!receiverSignature || !treasurerSignature) {
+      setMessage("領款人與財務長簽章尚未完整，不能核准。");
+      return;
+    }
+
+    if (!presidentSignature) {
+      setMessage("請先完成社長簽章。");
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      await updateDoc(doc(db, "financeRecords", currentRecordId), {
+        presidentSignature,
+        hasPresidentSignature: true,
+        hasClubSeal: Boolean(clubSeal),
+        status: "approved",
+        reviewedBy: currentUser?.email || "",
+        reviewedByName: profile?.name || "",
+        reviewedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      setCurrentStatus("approved");
+      setMessage("社長已核准，現在可以產生正式 PDF。");
+      fetchRecords();
+    } catch (err) {
+      console.error("approve finance record error:", err);
+      setMessage("社長核准失敗。");
+    }
+
+    setLoading(false);
   };
 
   const updateRecordStatus = async (id, status) => {
@@ -928,14 +1029,31 @@ export default function FinancePage() {
           </h1>
 
           <p className="mt-4 leading-8 text-slate-600">
-            財務長可建立財務證明、上傳收據 JPG、建立領款人線上簽名連結，
-            待領款人簽名後再產生正式 PDF。
+            流程：財務長建單 → 領款人線上簽名 → 財務長 / 經手人簽名 →
+            社長簽名審核 → 產生正式 PDF。
           </p>
 
-          <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
-            建議流程：填寫單據 → 建立領款人簽名連結 → 領款人線上簽名 →
-            財務長或社長載入單據 → 產生 PDF。
-          </div>
+          {currentRecordId ? (
+            <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
+              目前載入單據 ID：
+              <span className="font-semibold">{currentRecordId}</span>
+              <br />
+              狀態：
+              <span className="font-semibold">
+                {statusLabelMap[currentStatus] || currentStatus || "未設定"}
+              </span>
+            </div>
+          ) : (
+            <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
+              先填好資料並建立領款人簽名連結。領款人簽完後，資料會自動進入「待財務長簽名」。
+            </div>
+          )}
+
+          {formLocked ? (
+            <div className="mt-4 rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-red-700">
+              領款人已簽名，主要單據內容已鎖定。若要修改金額、領款人或收據，請建立新單據重新簽名。
+            </div>
+          ) : null}
 
           <form className="mt-8 space-y-5">
             <div className="grid gap-5 md:grid-cols-2">
@@ -944,7 +1062,8 @@ export default function FinancePage() {
                   所屬活動
                 </label>
                 <input
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  disabled={formLocked}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.activityName}
                   onChange={(e) => updateForm("activityName", e.target.value)}
                   placeholder="例如：六度空間-Lazertreks 社遊"
@@ -956,7 +1075,8 @@ export default function FinancePage() {
                   活動編號
                 </label>
                 <input
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  disabled={formLocked}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.activityCode}
                   onChange={(e) => updateForm("activityCode", e.target.value)}
                   placeholder="例如：A20260411"
@@ -970,7 +1090,8 @@ export default function FinancePage() {
                   費用類別
                 </label>
                 <select
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  disabled={formLocked}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.expenseType}
                   onChange={(e) => updateForm("expenseType", e.target.value)}
                 >
@@ -987,7 +1108,8 @@ export default function FinancePage() {
                   費用編號
                 </label>
                 <input
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  disabled={formLocked}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.expenseCode}
                   onChange={(e) => updateForm("expenseCode", e.target.value)}
                   placeholder="例如：EXP-20260411-001"
@@ -1001,8 +1123,9 @@ export default function FinancePage() {
                   領款日期
                 </label>
                 <input
+                  disabled={formLocked}
                   type="date"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.date}
                   onChange={(e) => updateForm("date", e.target.value)}
                 />
@@ -1013,7 +1136,8 @@ export default function FinancePage() {
                   申請補助
                 </label>
                 <select
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  disabled={formLocked}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.subsidyType}
                   onChange={(e) => updateForm("subsidyType", e.target.value)}
                 >
@@ -1032,8 +1156,9 @@ export default function FinancePage() {
                   金額 NT$
                 </label>
                 <input
+                  disabled={formLocked}
                   type="number"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.amount}
                   onChange={(e) => updateForm("amount", e.target.value)}
                   placeholder="例如：320"
@@ -1058,7 +1183,8 @@ export default function FinancePage() {
                 備註
               </label>
               <textarea
-                className="min-h-[90px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                disabled={formLocked}
+                className="min-h-[90px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                 value={form.note}
                 onChange={(e) => updateForm("note", e.target.value)}
                 placeholder="可填寫補充說明"
@@ -1076,7 +1202,8 @@ export default function FinancePage() {
                     領款人姓名
                   </label>
                   <input
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                    disabled={formLocked}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                     value={form.receiverName}
                     onChange={(e) => updateForm("receiverName", e.target.value)}
                     placeholder="請輸入領款人"
@@ -1088,7 +1215,8 @@ export default function FinancePage() {
                     身分別
                   </label>
                   <select
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                    disabled={formLocked}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                     value={form.receiverType}
                     onChange={(e) => updateForm("receiverType", e.target.value)}
                   >
@@ -1107,7 +1235,8 @@ export default function FinancePage() {
                     非社員說明
                   </label>
                   <input
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                    disabled={formLocked}
+                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                     value={form.nonMemberNote}
                     onChange={(e) => updateForm("nonMemberNote", e.target.value)}
                     placeholder="例如：講師、校外人員"
@@ -1120,7 +1249,8 @@ export default function FinancePage() {
                   學號 / 身分證號
                 </label>
                 <input
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                  disabled={formLocked}
+                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.studentId}
                   onChange={(e) => updateForm("studentId", e.target.value)}
                   placeholder="請輸入學號或身分證號"
@@ -1133,7 +1263,8 @@ export default function FinancePage() {
                 費用明細說明
               </label>
               <textarea
-                className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                disabled={formLocked}
+                className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                 value={form.description}
                 onChange={(e) => updateForm("description", e.target.value)}
                 placeholder="例如：六度空間社遊活動費用、印刷費、場地費等"
@@ -1146,11 +1277,12 @@ export default function FinancePage() {
               </label>
 
               <input
+                disabled={formLocked}
                 type="file"
                 accept="image/*"
                 multiple
                 onChange={handleReceiptUpload}
-                className="block w-full rounded-xl border border-slate-300 px-4 py-3 text-sm"
+                className="block w-full rounded-xl border border-slate-300 px-4 py-3 text-sm disabled:bg-slate-100"
               />
 
               {receiptImages.length > 0 ? (
@@ -1171,19 +1303,34 @@ export default function FinancePage() {
               ) : null}
             </div>
 
-            <SignaturePad
-              label="經手人 / 財務長簽章"
-              value={treasurerSignature}
-              onChange={setTreasurerSignature}
-            />
+            {currentStatus === "pending_treasurer_signature" ||
+            currentStatus === "pending_president_review" ||
+            currentStatus === "approved" ? (
+              <SignaturePad
+                label="經手人 / 財務長簽章"
+                value={treasurerSignature}
+                onChange={setTreasurerSignature}
+              />
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-500">
+                領款人尚未完成線上簽名前，財務長 / 經手人簽章區會先鎖定。
+              </div>
+            )}
 
             {isPresident ? (
               <>
-                <SignaturePad
-                  label="社長簽章"
-                  value={presidentSignature}
-                  onChange={setPresidentSignature}
-                />
+                {currentStatus === "pending_president_review" ||
+                currentStatus === "approved" ? (
+                  <SignaturePad
+                    label="社長簽章"
+                    value={presidentSignature}
+                    onChange={setPresidentSignature}
+                  />
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-500">
+                    單據尚未送到社長審核階段，社長簽章區會先鎖定。
+                  </div>
+                )}
 
                 <div className="rounded-2xl border border-slate-200 bg-white p-5">
                   <label className="mb-2 block text-sm font-medium text-slate-700">
@@ -1220,32 +1367,49 @@ export default function FinancePage() {
             ) : null}
 
             <div className="flex flex-wrap gap-3">
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => saveRecord("draft")}
-                className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                儲存草稿
-              </button>
+              {!formLocked ? (
+                <>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => saveRecord("draft")}
+                    className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    儲存草稿
+                  </button>
 
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => saveRecord("pending_receiver_signature")}
-                className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
-              >
-                建立領款人簽名連結
-              </button>
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => saveRecord("pending_receiver_signature")}
+                    className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+                  >
+                    建立領款人簽名連結
+                  </button>
+                </>
+              ) : null}
 
-              <button
-                type="button"
-                disabled={loading}
-                onClick={() => saveRecord("pending_review")}
-                className="rounded-xl bg-amber-600 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-700"
-              >
-                送出社長審核
-              </button>
+              {currentStatus === "pending_treasurer_signature" ? (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={submitTreasurerSignature}
+                  className="rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold text-white hover:bg-purple-700"
+                >
+                  財務長簽名完成，送出社長審核
+                </button>
+              ) : null}
+
+              {isPresident && currentStatus === "pending_president_review" ? (
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={approveByPresident}
+                  className="rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white hover:bg-green-700"
+                >
+                  社長簽名並核准
+                </button>
+              ) : null}
 
               <button
                 type="button"
@@ -1308,8 +1472,10 @@ export default function FinancePage() {
                         </div>
 
                         <div className="mt-2 text-sm text-slate-500">
-                          領款人簽名：
-                          {item.hasReceiverSignature ? "已完成" : "未完成"}
+                          簽章進度：
+                          領款人 {item.hasReceiverSignature ? "✅" : "未簽"} ／
+                          財務長 {item.hasTreasurerSignature ? "✅" : "未簽"} ／
+                          社長 {item.hasPresidentSignature ? "✅" : "未簽"}
                         </div>
                       </div>
 
@@ -1329,7 +1495,7 @@ export default function FinancePage() {
                         onClick={() => loadRecordToForm(item)}
                         className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
-                        載入單據 / 產生 PDF
+                        載入單據 / 簽名 / 產生 PDF
                       </button>
 
                       {item.receiverSignatureToken ? (
@@ -1349,14 +1515,6 @@ export default function FinancePage() {
 
                     {isPresident ? (
                       <div className="mt-4 flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={() => updateRecordStatus(item.id, "approved")}
-                          className="rounded-xl bg-green-600 px-4 py-2 text-sm font-semibold text-white hover:bg-green-700"
-                        >
-                          核准
-                        </button>
-
                         <button
                           type="button"
                           onClick={() => updateRecordStatus(item.id, "returned")}
