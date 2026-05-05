@@ -21,6 +21,7 @@ const receiverTypeOptions = ["淡江合氣道社員", "非社員"];
 
 const statusLabelMap = {
   draft: "草稿",
+  pending_receiver_signature: "待領款人簽名",
   pending_review: "待社長審核",
   returned: "退回修改",
   approved: "已核准",
@@ -29,10 +30,48 @@ const statusLabelMap = {
 
 const statusClassMap = {
   draft: "bg-slate-100 text-slate-700",
+  pending_receiver_signature: "bg-blue-100 text-blue-700",
   pending_review: "bg-amber-100 text-amber-700",
   returned: "bg-orange-100 text-orange-700",
   approved: "bg-green-100 text-green-700",
   rejected: "bg-red-100 text-red-700",
+};
+
+const initialForm = {
+  activityName: "",
+  activityCode: "",
+  expenseType: "活動費",
+  expenseCode: "",
+  date: "",
+  subsidyType: "社費支出",
+  note: "",
+  amount: "",
+  receiverName: "",
+  receiverType: "淡江合氣道社員",
+  nonMemberNote: "",
+  studentId: "",
+  description: "",
+};
+
+const pdfLabelCell = {
+  border: "1px solid #111",
+  background: "#f0f0f0",
+  fontWeight: "700",
+  textAlign: "center",
+  padding: "9px",
+  width: "16%",
+};
+
+const pdfValueCell = {
+  border: "1px solid #111",
+  padding: "9px",
+  minHeight: "34px",
+};
+
+const pdfSignatureCell = {
+  border: "1px solid #111",
+  padding: "10px",
+  verticalAlign: "top",
 };
 
 function toTaiwanYear(dateString) {
@@ -45,6 +84,7 @@ function toTaiwanYear(dateString) {
   }
 
   const date = new Date(dateString);
+
   if (Number.isNaN(date.getTime())) {
     return {
       year: "",
@@ -67,63 +107,68 @@ function numberToChineseAmount(inputAmount) {
     return "";
   }
 
-  const digits = ["零", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖"];
-  const units = ["", "拾", "佰", "仟"];
-  const bigUnits = ["", "萬", "億"];
+  const num = Math.floor(amount);
 
-  const integer = Math.floor(amount);
+  if (num === 0) return "零元整";
 
-  if (integer === 0) {
-    return "零元整";
-  }
+  const digitMap = ["零", "壹", "貳", "參", "肆", "伍", "陸", "柒", "捌", "玖"];
+  const unitMap = ["", "拾", "佰", "仟"];
+  const sectionUnitMap = ["", "萬", "億"];
 
-  const sectionToChinese = (section) => {
-    let str = "";
-    let zero = true;
+  function sectionToChinese(section) {
+    let result = "";
+    let zeroFlag = false;
 
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 4; i += 1) {
       const digit = section % 10;
 
       if (digit === 0) {
-        if (!zero) {
-          zero = true;
-          str = digits[0] + str;
+        if (result !== "") {
+          zeroFlag = true;
         }
       } else {
-        zero = false;
-        str = digits[digit] + units[i] + str;
+        if (zeroFlag) {
+          result = digitMap[0] + result;
+          zeroFlag = false;
+        }
+
+        result = digitMap[digit] + unitMap[i] + result;
       }
 
       section = Math.floor(section / 10);
     }
 
-    return str.replace(/零+$/g, "");
-  };
+    return result;
+  }
 
   let result = "";
-  let unitIndex = 0;
-  let num = integer;
+  let sectionIndex = 0;
+  let rest = num;
   let needZero = false;
 
-  while (num > 0) {
-    const section = num % 10000;
+  while (rest > 0) {
+    const section = rest % 10000;
 
     if (section === 0) {
       needZero = true;
     } else {
-      let sectionText = sectionToChinese(section);
+      const sectionText = sectionToChinese(section);
 
-      if (needZero && result) {
-        result = digits[0] + result;
+      if (needZero && result !== "") {
+        result = digitMap[0] + result;
       }
 
-      result = sectionText + bigUnits[unitIndex] + result;
+      result = sectionText + sectionUnitMap[sectionIndex] + result;
       needZero = section < 1000;
     }
 
-    num = Math.floor(num / 10000);
-    unitIndex += 1;
+    rest = Math.floor(rest / 10000);
+    sectionIndex += 1;
   }
+
+  result = result.replace(/^零+/, "");
+  result = result.replace(/零+/g, "零");
+  result = result.replace(/零$/g, "");
 
   return `${result}元整`;
 }
@@ -143,6 +188,32 @@ function readFileAsDataUrl(file) {
   });
 }
 
+function createSignatureToken() {
+  if (window.crypto && window.crypto.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function PdfCheckbox({ checked, label }) {
+  return (
+    <span style={{ marginRight: "18px", whiteSpace: "nowrap" }}>
+      <span
+        style={{
+          display: "inline-block",
+          width: "16px",
+          fontWeight: "700",
+          fontSize: "15px",
+        }}
+      >
+        {checked ? "■" : "□"}
+      </span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
 function SignaturePad({ label, value, onChange }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
@@ -155,6 +226,8 @@ function SignaturePad({ label, value, onChange }) {
     ctx.lineWidth = 2;
     ctx.lineCap = "round";
     ctx.strokeStyle = "#111827";
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     if (value) {
       const image = new Image();
@@ -349,9 +422,11 @@ function FinancePdfTemplate({
             <td style={pdfLabelCell}>費用類別</td>
             <td colSpan="3" style={pdfValueCell}>
               {expenseTypeOptions.map((item) => (
-                <span key={item} style={{ marginRight: "18px" }}>
-                  □{form.expenseType === item ? "■" : ""} {item}
-                </span>
+                <PdfCheckbox
+                  key={item}
+                  checked={form.expenseType === item}
+                  label={item}
+                />
               ))}
             </td>
             <td style={pdfLabelCell}>費用編號</td>
@@ -366,8 +441,11 @@ function FinancePdfTemplate({
             <td style={pdfLabelCell}>申請補助</td>
             <td style={pdfValueCell}>
               {subsidyTypeOptions.map((item) => (
-                <div key={item}>
-                  □{form.subsidyType === item ? "■" : ""} {item}
+                <div key={item} style={{ marginBottom: "4px" }}>
+                  <PdfCheckbox
+                    checked={form.subsidyType === item}
+                    label={item}
+                  />
                 </div>
               ))}
             </td>
@@ -375,7 +453,14 @@ function FinancePdfTemplate({
 
           <tr>
             <td style={pdfLabelCell}>備註</td>
-            <td colSpan="5" style={{ ...pdfValueCell, height: "92px", verticalAlign: "top" }}>
+            <td
+              colSpan="5"
+              style={{
+                ...pdfValueCell,
+                height: "92px",
+                verticalAlign: "top",
+              }}
+            >
               {form.note || ""}
             </td>
           </tr>
@@ -384,11 +469,20 @@ function FinancePdfTemplate({
             <td colSpan="2" style={pdfLabelCell}>
               新台幣（大寫）
             </td>
-            <td colSpan="2" style={{ ...pdfValueCell, textAlign: "center", fontWeight: "700" }}>
+            <td
+              colSpan="2"
+              style={{
+                ...pdfValueCell,
+                textAlign: "center",
+                fontWeight: "700",
+              }}
+            >
               {amountChinese}
             </td>
             <td style={pdfLabelCell}>NT$</td>
-            <td style={{ ...pdfValueCell, fontWeight: "700" }}>{form.amount || ""}</td>
+            <td style={{ ...pdfValueCell, fontWeight: "700" }}>
+              {form.amount || ""}
+            </td>
           </tr>
 
           <tr>
@@ -429,11 +523,17 @@ function FinancePdfTemplate({
                 <div>
                   ◆ 身分別：
                   <span style={{ marginLeft: "10px" }}>
-                    □{form.receiverType === "淡江合氣道社員" ? "■" : ""} 淡江合氣道社員
+                    <PdfCheckbox
+                      checked={form.receiverType === "淡江合氣道社員"}
+                      label="淡江合氣道社員"
+                    />
                   </span>
+
                   <span style={{ marginLeft: "12px" }}>
-                    □{form.receiverType === "非社員" ? "■" : ""} 非社員：
-                    {form.nonMemberNote || "______"}
+                    <PdfCheckbox
+                      checked={form.receiverType === "非社員"}
+                      label={`非社員：${form.nonMemberNote || "______"}`}
+                    />
                   </span>
                 </div>
 
@@ -572,43 +672,6 @@ function FinancePdfTemplate({
   );
 }
 
-const pdfLabelCell = {
-  border: "1px solid #111",
-  background: "#f0f0f0",
-  fontWeight: "700",
-  textAlign: "center",
-  padding: "9px",
-  width: "16%",
-};
-
-const pdfValueCell = {
-  border: "1px solid #111",
-  padding: "9px",
-  minHeight: "34px",
-};
-
-const pdfSignatureCell = {
-  border: "1px solid #111",
-  padding: "10px",
-  verticalAlign: "top",
-};
-
-const initialForm = {
-  activityName: "",
-  activityCode: "",
-  expenseType: "活動費",
-  expenseCode: "",
-  date: "",
-  subsidyType: "社費支出",
-  note: "",
-  amount: "",
-  receiverName: "",
-  receiverType: "淡江合氣道社員",
-  nonMemberNote: "",
-  studentId: "",
-  description: "",
-};
-
 export default function FinancePage() {
   const { currentUser, profile } = useAuth();
   const pdfRef = useRef(null);
@@ -712,15 +775,23 @@ export default function FinancePage() {
     setMessage("");
 
     try {
+      const receiverSignatureToken =
+        status === "pending_receiver_signature" ? createSignatureToken() : "";
+
       await addDoc(collection(db, "financeRecords"), {
         ...form,
         amount: Number(form.amount || 0),
         amountChinese,
-        receiptCount: receiptImages.length,
+        receiptImages,
+        receiverSignature,
+        treasurerSignature,
+        presidentSignature,
         hasReceiverSignature: Boolean(receiverSignature),
         hasTreasurerSignature: Boolean(treasurerSignature),
         hasPresidentSignature: Boolean(presidentSignature),
         hasClubSeal: Boolean(clubSeal),
+        receiverSignatureToken,
+        receiverSignedAt: null,
         status,
         createdBy: currentUser?.email || "",
         createdByName: profile?.name || "",
@@ -731,7 +802,14 @@ export default function FinancePage() {
         reviewedAt: null,
       });
 
-      setMessage(status === "pending_review" ? "已送出社長審核" : "草稿已儲存");
+      if (status === "pending_receiver_signature") {
+        setMessage("已建立單據，請到右側列表複製領款人簽名連結。");
+      } else if (status === "pending_review") {
+        setMessage("已送出社長審核。");
+      } else {
+        setMessage("草稿已儲存。");
+      }
+
       fetchRecords();
     } catch (err) {
       console.error("save finance record error:", err);
@@ -739,6 +817,31 @@ export default function FinancePage() {
     }
 
     setLoading(false);
+  };
+
+  const loadRecordToForm = (record) => {
+    setForm({
+      activityName: record.activityName || "",
+      activityCode: record.activityCode || "",
+      expenseType: record.expenseType || "活動費",
+      expenseCode: record.expenseCode || "",
+      date: record.date || "",
+      subsidyType: record.subsidyType || "社費支出",
+      note: record.note || "",
+      amount: record.amount ? String(record.amount) : "",
+      receiverName: record.receiverName || "",
+      receiverType: record.receiverType || "淡江合氣道社員",
+      nonMemberNote: record.nonMemberNote || "",
+      studentId: record.studentId || "",
+      description: record.description || "",
+    });
+
+    setReceiptImages(record.receiptImages || []);
+    setReceiverSignature(record.receiverSignature || "");
+    setTreasurerSignature(record.treasurerSignature || "");
+    setPresidentSignature(record.presidentSignature || "");
+
+    setMessage("已載入單據，可檢查內容後產生 PDF。");
   };
 
   const updateRecordStatus = async (id, status) => {
@@ -821,17 +924,17 @@ export default function FinancePage() {
           </div>
 
           <h1 className="mt-3 text-3xl font-black text-slate-900">
-            財務證明 / 請款單管理
+            領款收據 / 財務證明管理
           </h1>
 
           <p className="mt-4 leading-8 text-slate-600">
-            財務長可在此建立社團支出紀錄、上傳收據 JPG、手寫簽章並產生 PDF。
-            社長可審核單據並加上社長簽章與社章。
+            財務長可建立財務證明、上傳收據 JPG、建立領款人線上簽名連結，
+            待領款人簽名後再產生正式 PDF。
           </p>
 
           <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
-            第一版功能：先產生 PDF 並下載到電腦，同時儲存財務紀錄到 Firestore。
-            下一版可串接 Google Apps Script，自動把 PDF 存入社團 Google Drive。
+            建議流程：填寫單據 → 建立領款人簽名連結 → 領款人線上簽名 →
+            財務長或社長載入單據 → 產生 PDF。
           </div>
 
           <form className="mt-8 space-y-5">
@@ -1053,7 +1156,10 @@ export default function FinancePage() {
               {receiptImages.length > 0 ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
                   {receiptImages.map((item, index) => (
-                    <div key={index} className="rounded-xl border border-slate-200 p-2">
+                    <div
+                      key={index}
+                      className="rounded-xl border border-slate-200 p-2"
+                    >
                       <img
                         src={item}
                         alt={`收據 ${index + 1}`}
@@ -1064,12 +1170,6 @@ export default function FinancePage() {
                 </div>
               ) : null}
             </div>
-
-            <SignaturePad
-              label="領款人簽章"
-              value={receiverSignature}
-              onChange={setReceiverSignature}
-            />
 
             <SignaturePad
               label="經手人 / 財務長簽章"
@@ -1127,6 +1227,15 @@ export default function FinancePage() {
                 className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
               >
                 儲存草稿
+              </button>
+
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => saveRecord("pending_receiver_signature")}
+                className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
+              >
+                建立領款人簽名連結
               </button>
 
               <button
@@ -1197,15 +1306,45 @@ export default function FinancePage() {
                         <div className="mt-2 text-sm text-slate-500">
                           建立者：{item.createdByName || item.createdBy || "未知"}
                         </div>
+
+                        <div className="mt-2 text-sm text-slate-500">
+                          領款人簽名：
+                          {item.hasReceiverSignature ? "已完成" : "未完成"}
+                        </div>
                       </div>
 
                       <span
                         className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          statusClassMap[item.status] || "bg-slate-100 text-slate-700"
+                          statusClassMap[item.status] ||
+                          "bg-slate-100 text-slate-700"
                         }`}
                       >
                         {statusLabelMap[item.status] || item.status || "未設定"}
                       </span>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={() => loadRecordToForm(item)}
+                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                      >
+                        載入單據 / 產生 PDF
+                      </button>
+
+                      {item.receiverSignatureToken ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const link = `${window.location.origin}/finance/sign/${item.id}?token=${item.receiverSignatureToken}`;
+                            navigator.clipboard.writeText(link);
+                            setMessage("已複製領款人簽名連結，可傳給對方簽名。");
+                          }}
+                          className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                        >
+                          複製領款人簽名連結
+                        </button>
+                      ) : null}
                     </div>
 
                     {isPresident ? (
@@ -1251,7 +1390,7 @@ export default function FinancePage() {
             </h2>
 
             <p className="mt-4 leading-8 text-slate-600">
-              下方是即將輸出的財務證明版面，排版參考紙本表格設計。
+              下方是即將輸出的財務證明版面。先載入單據，再產生 PDF。
             </p>
 
             <div className="mt-6 overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-4">
