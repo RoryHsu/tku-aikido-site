@@ -1,147 +1,68 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 
 import Home from "./pages/Home";
 import About from "./pages/About";
 import Coaches from "./pages/Coaches";
 import Classes from "./pages/Classes";
+import Events from "./pages/Events";
+import EventDetail from "./pages/EventDetail";
 import Achievements from "./pages/Achievements";
 import Videos from "./pages/Videos";
 import Contact from "./pages/Contact";
-import Events from "./pages/Events";
-import EventDetail from "./pages/EventDetail";
 
 import AdminLogin from "./pages/admin/AdminLogin";
 import ForgotPassword from "./pages/admin/ForgotPassword";
 import Dashboard from "./pages/admin/Dashboard";
 import RolesPage from "./pages/admin/RolesPage";
-import MembersPage from "./pages/admin/MembersPage";
 import EventsPage from "./pages/admin/EventsPage";
 import MediaPage from "./pages/admin/MediaPage";
+import MembersPage from "./pages/admin/MembersPage";
 import FinancePage from "./pages/admin/FinancePage";
-import ClubSealPage from "./pages/admin/ClubSealPage";
-
-import FinanceSignPage from "./pages/FinanceSignPage";
+import SealPage from "./pages/admin/SealPage";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
 import RoleRoute from "./routes/RoleRoute";
-
-function PublicLayout({ children }) {
-  return (
-    <>
-      <Navbar />
-      {children}
-      <Footer />
-    </>
-  );
-}
 
 export default function App() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Public Pages */}
-        <Route
-          path="/"
-          element={
-            <PublicLayout>
-              <Home />
-            </PublicLayout>
-          }
-        />
+        {/* 前台頁面 */}
+        <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
+        <Route path="/coaches" element={<Coaches />} />
+        <Route path="/classes" element={<Classes />} />
+        <Route path="/events" element={<Events />} />
+        <Route path="/events/:eventId" element={<EventDetail />} />
+        <Route path="/achievements" element={<Achievements />} />
+        <Route path="/videos" element={<Videos />} />
+        <Route path="/contact" element={<Contact />} />
 
-        <Route
-          path="/about"
-          element={
-            <PublicLayout>
-              <About />
-            </PublicLayout>
-          }
-        />
-
-        <Route
-          path="/coaches"
-          element={
-            <PublicLayout>
-              <Coaches />
-            </PublicLayout>
-          }
-        />
-
-        <Route
-          path="/classes"
-          element={
-            <PublicLayout>
-              <Classes />
-            </PublicLayout>
-          }
-        />
-
-        <Route
-          path="/achievements"
-          element={
-            <PublicLayout>
-              <Achievements />
-            </PublicLayout>
-          }
-        />
-
-        <Route
-          path="/videos"
-          element={
-            <PublicLayout>
-              <Videos />
-            </PublicLayout>
-          }
-        />
-
-        <Route
-          path="/contact"
-          element={
-            <PublicLayout>
-              <Contact />
-            </PublicLayout>
-          }
-        />
-
-        <Route
-          path="/events"
-          element={
-            <PublicLayout>
-              <Events />
-            </PublicLayout>
-          }
-        />
-
-        <Route
-          path="/events/:id"
-          element={
-            <PublicLayout>
-              <EventDetail />
-            </PublicLayout>
-          }
-        />
-
-        {/* Public Signature Page */}
-        <Route path="/finance/sign/:recordId" element={<FinanceSignPage />} />
-
-        {/* Admin Auth Pages */}
+        {/* 後台登入 */}
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/forgot-password" element={<ForgotPassword />} />
 
-        {/* Admin Dashboard */}
+        {/* 後台首頁：所有幹部可進入 */}
         <Route
           path="/admin/dashboard"
           element={
             <ProtectedRoute>
-              <Dashboard />
+              <RoleRoute
+                allowRoles={[
+                  "president",
+                  "vice",
+                  "finance",
+                  "activity",
+                  "pr",
+                ]}
+              >
+                <Dashboard />
+              </RoleRoute>
             </ProtectedRoute>
           }
         />
 
-        {/* President Only */}
+        {/* 職位授權管理：只有社長 */}
         <Route
           path="/admin/roles"
           element={
@@ -153,18 +74,7 @@ export default function App() {
           }
         />
 
-        <Route
-          path="/admin/club-seal"
-          element={
-            <ProtectedRoute>
-              <RoleRoute allowRoles={["president"]}>
-                <ClubSealPage />
-              </RoleRoute>
-            </ProtectedRoute>
-          }
-        />
-
-        {/* President + Vice */}
+        {/* 社員資料管理：社長、副社長 */}
         <Route
           path="/admin/members"
           element={
@@ -176,7 +86,7 @@ export default function App() {
           }
         />
 
-        {/* All Officers */}
+        {/* 活動公告管理：所有幹部可協助 */}
         <Route
           path="/admin/events"
           element={
@@ -196,6 +106,7 @@ export default function App() {
           }
         />
 
+        {/* 照片 / 影片管理：所有幹部可協助 */}
         <Route
           path="/admin/media"
           element={
@@ -215,7 +126,7 @@ export default function App() {
           }
         />
 
-        {/* President + Finance */}
+        {/* 領款收據 / 財務證明管理：財務長與社長 */}
         <Route
           path="/admin/finance"
           element={
@@ -226,6 +137,24 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+
+        {/* 社章設定：只有社長 */}
+        <Route
+          path="/admin/seal"
+          element={
+            <ProtectedRoute>
+              <RoleRoute allowRoles={["president"]}>
+                <SealPage />
+              </RoleRoute>
+            </ProtectedRoute>
+          }
+        />
+
+        {/* 預設導向 */}
+        <Route path="/admin" element={<Navigate to="/admin/dashboard" replace />} />
+
+        {/* 404 fallback */}
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );

@@ -1337,8 +1337,10 @@ export default function FinancePage() {
   if (!isFinancePageAllowed) {
     return (
       <AdminLayout>
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <h1 className="text-3xl font-black text-slate-900">沒有權限</h1>
+        <div className="rounded-3xl bg-white p-5 shadow-sm sm:p-8">
+          <h1 className="text-2xl font-black text-slate-900 sm:text-3xl">
+            沒有權限
+          </h1>
           <p className="mt-4 text-slate-600">
             此頁面只開放社長與財務長使用。
           </p>
@@ -1349,222 +1351,146 @@ export default function FinancePage() {
 
   return (
     <AdminLayout>
-      <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-            FINANCE MANAGEMENT
-          </div>
-
-          <h1 className="mt-3 text-3xl font-black text-slate-900">
-            領款收據 / 財務證明管理
-          </h1>
-
-          <p className="mt-4 leading-8 text-slate-600">
-            流程：財務長建單 → 領款人線上簽名 → 財務長 / 經手人簽名 →
-            社長簽名審核 → 自動套用社章 → 產生正式 PDF。
-          </p>
-
-          {!isFinanceRole && !currentRecordId ? (
-            <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-700">
-              社長頁面只能審核、簽名與產生 PDF，不能建立新的財務證明。請從右側列表選擇待審核或已完成單據。
+      <div className="w-full max-w-full overflow-hidden">
+        <div className="grid w-full min-w-0 gap-6 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:gap-8">
+          <div className="min-w-0 rounded-3xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
+            <div className="text-xs font-semibold tracking-[0.2em] text-amber-700 sm:text-sm">
+              FINANCE MANAGEMENT
             </div>
-          ) : null}
 
-          {currentRecordId ? (
-            <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
-              目前載入單據 ID：
-              <span className="font-semibold">{currentRecordId}</span>
-              <br />
-              狀態：
-              <span className="font-semibold">
-                {statusLabelMap[currentStatus] || currentStatus || "未設定"}
-              </span>
-            </div>
-          ) : isFinanceRole ? (
-            <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
-              先填好資料並建立領款人簽名連結。領款人簽完後，資料會自動進入「待財務長簽名」。
-            </div>
-          ) : null}
+            <h1 className="mt-3 break-words text-2xl font-black leading-tight text-slate-900 sm:text-3xl">
+              領款收據 / 財務證明管理
+            </h1>
 
-          {currentStatus === "approved" ? (
-            <div className="mt-4 rounded-2xl bg-green-50 px-4 py-4 text-sm leading-7 text-green-700">
-              此單據已完成簽核，內容已鎖定。現在只可產生正式 PDF。
-              {isFinanceRole ? " 財務長也可以刪除此單據。" : ""}
-            </div>
-          ) : null}
+            <p className="mt-4 break-words text-sm leading-8 text-slate-600 sm:text-base">
+              流程：財務長建單 → 領款人線上簽名 → 財務長 / 經手人簽名 →
+              社長簽名審核 → 自動套用社章 → 產生正式 PDF。
+            </p>
 
-          {currentStatus === "returned" && isFinanceRole ? (
-            <div className="mt-4 rounded-2xl bg-orange-50 px-4 py-4 text-sm leading-7 text-orange-700">
-              此單據已被社長退回。你可以直接修改原本資料，不需要重新建立整張單據。
-              若只是備註、活動編號或小錯字，可保留領款人簽名並送回財務長確認；
-              若修改金額、領款人、收據或重要內容，建議重新建立領款人簽名連結。
-            </div>
-          ) : null}
-
-          <form className="mt-8 space-y-5">
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  所屬活動
-                </label>
-                <input
-                  disabled={mainFieldsLocked}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.activityName}
-                  onChange={(e) => updateForm("activityName", e.target.value)}
-                  placeholder="例如：六度空間-Lazertreks 社遊"
-                />
+            {!isFinanceRole && !currentRecordId ? (
+              <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-700">
+                社長頁面只能審核、簽名與產生 PDF，不能建立新的財務證明。請從下方列表選擇待審核或已完成單據。
               </div>
+            ) : null}
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  活動編號
-                </label>
-                <input
-                  disabled={mainFieldsLocked}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.activityCode}
-                  onChange={(e) => updateForm("activityCode", e.target.value)}
-                  placeholder="例如：A20260411"
-                />
+            {currentRecordId ? (
+              <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
+                目前載入單據 ID：
+                <span className="break-all font-semibold">{currentRecordId}</span>
+                <br />
+                狀態：
+                <span className="font-semibold">
+                  {statusLabelMap[currentStatus] || currentStatus || "未設定"}
+                </span>
               </div>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  費用類別
-                </label>
-                <select
-                  disabled={mainFieldsLocked}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.expenseType}
-                  onChange={(e) => updateForm("expenseType", e.target.value)}
-                >
-                  {expenseTypeOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
+            ) : isFinanceRole ? (
+              <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
+                先填好資料並建立領款人簽名連結。領款人簽完後，資料會自動進入「待財務長簽名」。
               </div>
+            ) : null}
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  費用編號
-                </label>
-                <input
-                  disabled={mainFieldsLocked}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.expenseCode}
-                  onChange={(e) => updateForm("expenseCode", e.target.value)}
-                  placeholder="例如：EXP-20260411-001"
-                />
+            {currentStatus === "approved" ? (
+              <div className="mt-4 rounded-2xl bg-green-50 px-4 py-4 text-sm leading-7 text-green-700">
+                此單據已完成簽核，內容已鎖定。現在只可產生正式 PDF。
+                {isFinanceRole ? " 財務長也可以刪除此單據。" : ""}
               </div>
-            </div>
+            ) : null}
 
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  領款日期
-                </label>
-                <input
-                  disabled={mainFieldsLocked}
-                  type="date"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.date}
-                  onChange={(e) => updateForm("date", e.target.value)}
-                />
+            {currentStatus === "returned" && isFinanceRole ? (
+              <div className="mt-4 rounded-2xl bg-orange-50 px-4 py-4 text-sm leading-7 text-orange-700">
+                此單據已被社長退回。你可以直接修改原本資料，不需要重新建立整張單據。
+                若只是備註、活動編號或小錯字，可保留領款人簽名並送回財務長確認；
+                若修改金額、領款人、收據或重要內容，建議重新建立領款人簽名連結。
               </div>
+            ) : null}
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  申請補助
-                </label>
-                <select
-                  disabled={mainFieldsLocked}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.subsidyType}
-                  onChange={(e) => updateForm("subsidyType", e.target.value)}
-                >
-                  {subsidyTypeOptions.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="grid gap-5 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  金額 NT$
-                </label>
-                <input
-                  disabled={mainFieldsLocked}
-                  type="number"
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.amount}
-                  onChange={(e) => updateForm("amount", e.target.value)}
-                  placeholder="例如：320"
-                />
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
-                  新台幣大寫
-                </label>
-                <input
-                  className="w-full rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 outline-none"
-                  value={amountChinese}
-                  readOnly
-                  placeholder="系統自動產生"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                備註
-              </label>
-              <textarea
-                disabled={mainFieldsLocked}
-                className="min-h-[90px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                value={form.note}
-                onChange={(e) => updateForm("note", e.target.value)}
-                placeholder="可填寫補充說明"
-              />
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <h2 className="text-xl font-black text-slate-900">領款人資料</h2>
-
-              <div className="mt-5 grid gap-5 md:grid-cols-2">
-                <div>
+            <form className="mt-8 space-y-5">
+              <div className="grid min-w-0 gap-5 md:grid-cols-2">
+                <div className="min-w-0">
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    領款人姓名
+                    所屬活動
                   </label>
                   <input
                     disabled={mainFieldsLocked}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                    value={form.receiverName}
-                    onChange={(e) => updateForm("receiverName", e.target.value)}
-                    placeholder="請輸入領款人"
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.activityName}
+                    onChange={(e) => updateForm("activityName", e.target.value)}
+                    placeholder="例如：六度空間-Lazertreks 社遊"
                   />
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    身分別
+                    活動編號
+                  </label>
+                  <input
+                    disabled={mainFieldsLocked}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.activityCode}
+                    onChange={(e) => updateForm("activityCode", e.target.value)}
+                    placeholder="例如：A20260411"
+                  />
+                </div>
+              </div>
+
+              <div className="grid min-w-0 gap-5 md:grid-cols-2">
+                <div className="min-w-0">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    費用類別
                   </label>
                   <select
                     disabled={mainFieldsLocked}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                    value={form.receiverType}
-                    onChange={(e) => updateForm("receiverType", e.target.value)}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.expenseType}
+                    onChange={(e) => updateForm("expenseType", e.target.value)}
                   >
-                    {receiverTypeOptions.map((item) => (
+                    {expenseTypeOptions.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="min-w-0">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    費用編號
+                  </label>
+                  <input
+                    disabled={mainFieldsLocked}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.expenseCode}
+                    onChange={(e) => updateForm("expenseCode", e.target.value)}
+                    placeholder="例如：EXP-20260411-001"
+                  />
+                </div>
+              </div>
+
+              <div className="grid min-w-0 gap-5 md:grid-cols-2">
+                <div className="min-w-0">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    領款日期
+                  </label>
+                  <input
+                    disabled={mainFieldsLocked}
+                    type="date"
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.date}
+                    onChange={(e) => updateForm("date", e.target.value)}
+                  />
+                </div>
+
+                <div className="min-w-0">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    申請補助
+                  </label>
+                  <select
+                    disabled={mainFieldsLocked}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.subsidyType}
+                    onChange={(e) => updateForm("subsidyType", e.target.value)}
+                  >
+                    {subsidyTypeOptions.map((item) => (
                       <option key={item} value={item}>
                         {item}
                       </option>
@@ -1573,438 +1499,519 @@ export default function FinancePage() {
                 </div>
               </div>
 
-              {form.receiverType === "非社員" ? (
-                <div className="mt-5">
+              <div className="grid min-w-0 gap-5 md:grid-cols-2">
+                <div className="min-w-0">
                   <label className="mb-2 block text-sm font-medium text-slate-700">
-                    非社員說明
+                    金額 NT$
                   </label>
                   <input
                     disabled={mainFieldsLocked}
-                    className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                    value={form.nonMemberNote}
-                    onChange={(e) => updateForm("nonMemberNote", e.target.value)}
-                    placeholder="例如：講師、校外人員"
+                    type="number"
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.amount}
+                    onChange={(e) => updateForm("amount", e.target.value)}
+                    placeholder="例如：320"
                   />
                 </div>
-              ) : null}
 
-              <div className="mt-5">
+                <div className="min-w-0">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    新台幣大寫
+                  </label>
+                  <input
+                    className="w-full min-w-0 rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none sm:text-base"
+                    value={amountChinese}
+                    readOnly
+                    placeholder="系統自動產生"
+                  />
+                </div>
+              </div>
+
+              <div className="min-w-0">
                 <label className="mb-2 block text-sm font-medium text-slate-700">
-                  學號 / 身分證號
+                  備註
                 </label>
-                <input
+                <textarea
                   disabled={mainFieldsLocked}
-                  className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                  value={form.studentId}
-                  onChange={(e) => updateForm("studentId", e.target.value)}
-                  placeholder="請輸入學號或身分證號"
+                  className="min-h-[90px] w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                  value={form.note}
+                  onChange={(e) => updateForm("note", e.target.value)}
+                  placeholder="可填寫補充說明"
                 />
               </div>
-            </div>
 
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                費用明細說明
-              </label>
-              <textarea
-                disabled={mainFieldsLocked}
-                className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
-                value={form.description}
-                onChange={(e) => updateForm("description", e.target.value)}
-                placeholder="例如：六度空間社遊活動費用、印刷費、場地費等"
-              />
-            </div>
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+                <h2 className="text-lg font-black text-slate-900 sm:text-xl">
+                  領款人資料
+                </h2>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-5">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <label className="block text-sm font-semibold text-slate-700">
-                  上傳發票 / 收據 JPG
-                </label>
+                <div className="mt-5 grid min-w-0 gap-5 md:grid-cols-2">
+                  <div className="min-w-0">
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      領款人姓名
+                    </label>
+                    <input
+                      disabled={mainFieldsLocked}
+                      className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                      value={form.receiverName}
+                      onChange={(e) => updateForm("receiverName", e.target.value)}
+                      placeholder="請輸入領款人"
+                    />
+                  </div>
 
-                <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  已上傳 {receiptImages.length} 張
-                </div>
-              </div>
-
-              <input
-                disabled={mainFieldsLocked}
-                type="file"
-                accept="image/*"
-                multiple
-                onChange={handleReceiptUpload}
-                className="mt-3 block w-full rounded-xl border border-slate-300 px-4 py-3 text-sm disabled:bg-slate-100"
-              />
-
-              {receiptImages.length > 0 ? (
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-                  {receiptImages.map((item, index) => (
-                    <div
-                      key={`${item.slice(0, 30)}-${index}`}
-                      className="relative rounded-xl border border-slate-200 bg-slate-50 p-2"
+                  <div className="min-w-0">
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      身分別
+                    </label>
+                    <select
+                      disabled={mainFieldsLocked}
+                      className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                      value={form.receiverType}
+                      onChange={(e) => updateForm("receiverType", e.target.value)}
                     >
-                      {!mainFieldsLocked ? (
-                        <button
-                          type="button"
-                          onClick={() => removeReceiptImage(index)}
-                          className="absolute right-2 top-2 rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white shadow hover:bg-red-700"
-                        >
-                          刪除
-                        </button>
-                      ) : null}
-
-                      <img
-                        src={item}
-                        alt={`收據 ${index + 1}`}
-                        className="h-40 w-full rounded-lg bg-white object-contain"
-                      />
-
-                      <div className="mt-2 text-center text-xs font-semibold text-slate-500">
-                        收據 / 發票 {index + 1}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
-                  尚未上傳收據或發票。
-                </div>
-              )}
-            </div>
-
-            {isFinanceRole && currentStatus === "pending_treasurer_signature" ? (
-              <SignaturePad
-                label="經手人 / 財務長簽章"
-                value={treasurerSignature}
-                onChange={setTreasurerSignature}
-              />
-            ) : null}
-
-            {isPresident && currentStatus === "pending_president_review" ? (
-              <SignaturePad
-                label="社長簽章"
-                value={presidentSignature}
-                onChange={setPresidentSignature}
-              />
-            ) : null}
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-              <div className="text-sm font-semibold text-slate-700">
-                社章套用狀態
-              </div>
-
-              {clubSeal ? (
-                <div className="mt-4 flex items-center gap-4">
-                  <img
-                    src={clubSeal}
-                    alt="社章"
-                    className="h-20 w-20 rounded-xl border border-slate-200 bg-white object-contain p-2"
-                  />
-                  <div className="text-sm leading-7 text-slate-500">
-                    已讀取社長設定的社章。核准後產生 PDF 時，會自動套用在「社章」欄位。
+                      {receiverTypeOptions.map((item) => (
+                        <option key={item} value={item}>
+                          {item}
+                        </option>
+                      ))}
+                    </select>
                   </div>
                 </div>
-              ) : (
-                <div className="mt-3 text-sm leading-7 text-red-600">
-                  尚未設定社章。請社長先到「社章設定」頁上傳社章。
+
+                {form.receiverType === "非社員" ? (
+                  <div className="mt-5 min-w-0">
+                    <label className="mb-2 block text-sm font-medium text-slate-700">
+                      非社員說明
+                    </label>
+                    <input
+                      disabled={mainFieldsLocked}
+                      className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                      value={form.nonMemberNote}
+                      onChange={(e) => updateForm("nonMemberNote", e.target.value)}
+                      placeholder="例如：講師、校外人員"
+                    />
+                  </div>
+                ) : null}
+
+                <div className="mt-5 min-w-0">
+                  <label className="mb-2 block text-sm font-medium text-slate-700">
+                    學號 / 身分證號
+                  </label>
+                  <input
+                    disabled={mainFieldsLocked}
+                    className="w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                    value={form.studentId}
+                    onChange={(e) => updateForm("studentId", e.target.value)}
+                    placeholder="請輸入學號或身分證號"
+                  />
                 </div>
-              )}
-            </div>
-
-            {message ? (
-              <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                {message}
               </div>
-            ) : null}
 
-            <div className="flex flex-wrap gap-3">
-              {isFinanceRole && !mainFieldsLocked ? (
-                <>
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => saveRecord("draft")}
-                    className="rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                  >
-                    儲存草稿
-                  </button>
+              <div className="min-w-0">
+                <label className="mb-2 block text-sm font-medium text-slate-700">
+                  費用明細說明
+                </label>
+                <textarea
+                  disabled={mainFieldsLocked}
+                  className="min-h-[100px] w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none disabled:bg-slate-100 sm:text-base"
+                  value={form.description}
+                  onChange={(e) => updateForm("description", e.target.value)}
+                  placeholder="例如：六度空間社遊活動費用、印刷費、場地費等"
+                />
+              </div>
 
-                  {currentStatus === "returned" && receiverSignature ? (
-                    <button
-                      type="button"
-                      disabled={loading}
-                      onClick={resubmitReturnedRecordWithoutReceiverResign}
-                      className="rounded-xl bg-amber-600 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-700"
-                    >
-                      保留領款人簽名，送回財務長確認
-                    </button>
-                  ) : null}
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <label className="block text-sm font-semibold text-slate-700">
+                    上傳發票 / 收據 JPG
+                  </label>
 
-                  <button
-                    type="button"
-                    disabled={loading}
-                    onClick={() => saveRecord("pending_receiver_signature")}
-                    className="rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700"
-                  >
-                    {currentStatus === "returned"
-                      ? "重新建立領款人簽名連結"
-                      : "建立領款人簽名連結"}
-                  </button>
-                </>
-              ) : null}
+                  <div className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                    已上傳 {receiptImages.length} 張
+                  </div>
+                </div>
+
+                <input
+                  disabled={mainFieldsLocked}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleReceiptUpload}
+                  className="mt-3 block w-full min-w-0 rounded-xl border border-slate-300 px-4 py-3 text-sm disabled:bg-slate-100"
+                />
+
+                {receiptImages.length > 0 ? (
+                  <div className="mt-4 grid min-w-0 gap-3 sm:grid-cols-2">
+                    {receiptImages.map((item, index) => (
+                      <div
+                        key={`${item.slice(0, 30)}-${index}`}
+                        className="relative min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-2"
+                      >
+                        {!mainFieldsLocked ? (
+                          <button
+                            type="button"
+                            onClick={() => removeReceiptImage(index)}
+                            className="absolute right-2 top-2 rounded-lg bg-red-600 px-2 py-1 text-xs font-semibold text-white shadow hover:bg-red-700"
+                          >
+                            刪除
+                          </button>
+                        ) : null}
+
+                        <img
+                          src={item}
+                          alt={`收據 ${index + 1}`}
+                          className="h-40 w-full rounded-lg bg-white object-contain"
+                        />
+
+                        <div className="mt-2 text-center text-xs font-semibold text-slate-500">
+                          收據 / 發票 {index + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center text-sm text-slate-400">
+                    尚未上傳收據或發票。
+                  </div>
+                )}
+              </div>
 
               {isFinanceRole && currentStatus === "pending_treasurer_signature" ? (
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={submitTreasurerSignature}
-                  className="rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold text-white hover:bg-purple-700"
-                >
-                  財務長簽名完成，送出社長審核
-                </button>
+                <SignaturePad
+                  label="經手人 / 財務長簽章"
+                  value={treasurerSignature}
+                  onChange={setTreasurerSignature}
+                />
               ) : null}
 
               {isPresident && currentStatus === "pending_president_review" ? (
-                <button
-                  type="button"
-                  disabled={loading}
-                  onClick={approveByPresident}
-                  className="rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white hover:bg-green-700"
-                >
-                  社長簽名並核准
-                </button>
+                <SignaturePad
+                  label="社長簽章"
+                  value={presidentSignature}
+                  onChange={setPresidentSignature}
+                />
               ) : null}
 
-              {currentStatus === "approved" ? (
-                <button
-                  type="button"
-                  disabled={!canGenerateCurrentPdf || loading}
-                  onClick={generatePdfFromCurrentForm}
-                  className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                >
-                  產生正式 PDF
-                </button>
-              ) : null}
+              <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5">
+                <div className="text-sm font-semibold text-slate-700">
+                  社章套用狀態
+                </div>
 
-              {isFinanceRole && currentStatus !== "approved" ? (
-                <button
-                  type="button"
-                  onClick={clearForm}
-                  className="rounded-xl border border-red-300 px-5 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
-                >
-                  清空表單
-                </button>
-              ) : null}
-            </div>
-          </form>
-        </div>
-
-        <div className="space-y-8">
-          <div className="rounded-3xl bg-white p-8 shadow-sm">
-            <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-              FINANCE RECORDS
-            </div>
-
-            <h2 className="mt-3 text-3xl font-black text-slate-900">
-              財務單據列表
-            </h2>
-
-            {fetching ? (
-              <div className="mt-6 text-slate-500">載入中...</div>
-            ) : records.length === 0 ? (
-              <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
-                目前尚未建立任何財務紀錄。
+                {clubSeal ? (
+                  <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center">
+                    <img
+                      src={clubSeal}
+                      alt="社章"
+                      className="h-20 w-20 rounded-xl border border-slate-200 bg-white object-contain p-2"
+                    />
+                    <div className="text-sm leading-7 text-slate-500">
+                      已讀取社長設定的社章。核准後產生 PDF 時，會自動套用在「社章」欄位。
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-3 text-sm leading-7 text-red-600">
+                    尚未設定社章。請社長先到「社章設定」頁上傳社章。
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="mt-6 space-y-4">
-                {records.map((item) => (
-                  <div
-                    key={item.id}
-                    className="rounded-2xl border border-slate-200 p-5"
+
+              {message ? (
+                <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm leading-7 text-slate-700">
+                  {message}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                {isFinanceRole && !mainFieldsLocked ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => saveRecord("draft")}
+                      className="w-full rounded-xl border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      儲存草稿
+                    </button>
+
+                    {currentStatus === "returned" && receiverSignature ? (
+                      <button
+                        type="button"
+                        disabled={loading}
+                        onClick={resubmitReturnedRecordWithoutReceiverResign}
+                        className="w-full rounded-xl bg-amber-600 px-5 py-3 text-sm font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                      >
+                        保留領款人簽名，送回財務長確認
+                      </button>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      disabled={loading}
+                      onClick={() => saveRecord("pending_receiver_signature")}
+                      className="w-full rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                    >
+                      {currentStatus === "returned"
+                        ? "重新建立領款人簽名連結"
+                        : "建立領款人簽名連結"}
+                    </button>
+                  </>
+                ) : null}
+
+                {isFinanceRole && currentStatus === "pending_treasurer_signature" ? (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={submitTreasurerSignature}
+                    className="w-full rounded-xl bg-purple-600 px-5 py-3 text-sm font-semibold text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                   >
-                    <div className="flex items-start justify-between gap-4">
-                      <div>
-                        <div className="text-xl font-black text-slate-900">
-                          {item.activityName || "未命名活動"}
+                    財務長簽名完成，送出社長審核
+                  </button>
+                ) : null}
+
+                {isPresident && currentStatus === "pending_president_review" ? (
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={approveByPresident}
+                    className="w-full rounded-xl bg-green-600 px-5 py-3 text-sm font-semibold text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                  >
+                    社長簽名並核准
+                  </button>
+                ) : null}
+
+                {currentStatus === "approved" ? (
+                  <button
+                    type="button"
+                    disabled={!canGenerateCurrentPdf || loading}
+                    onClick={generatePdfFromCurrentForm}
+                    className="w-full rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
+                  >
+                    產生正式 PDF
+                  </button>
+                ) : null}
+
+                {isFinanceRole && currentStatus !== "approved" ? (
+                  <button
+                    type="button"
+                    onClick={clearForm}
+                    className="w-full rounded-xl border border-red-300 px-5 py-3 text-sm font-semibold text-red-600 hover:bg-red-50 sm:w-auto"
+                  >
+                    清空表單
+                  </button>
+                ) : null}
+              </div>
+            </form>
+          </div>
+
+          <div className="min-w-0 space-y-6 xl:space-y-8">
+            <div className="min-w-0 rounded-3xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
+              <div className="text-xs font-semibold tracking-[0.2em] text-amber-700 sm:text-sm">
+                FINANCE RECORDS
+              </div>
+
+              <h2 className="mt-3 break-words text-2xl font-black text-slate-900 sm:text-3xl">
+                財務單據列表
+              </h2>
+
+              {fetching ? (
+                <div className="mt-6 text-slate-500">載入中...</div>
+              ) : records.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
+                  目前尚未建立任何財務紀錄。
+                </div>
+              ) : (
+                <div className="mt-6 space-y-4">
+                  {records.map((item) => (
+                    <div
+                      key={item.id}
+                      className="min-w-0 rounded-2xl border border-slate-200 p-4 sm:p-5"
+                    >
+                      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="break-words text-xl font-black text-slate-900">
+                            {item.activityName || "未命名活動"}
+                          </div>
+
+                          <div className="mt-2 break-words text-sm text-slate-500">
+                            {item.expenseType} ｜ NT$ {item.amount || 0}
+                          </div>
+
+                          <div className="mt-2 break-words text-sm text-slate-500">
+                            領款人：{item.receiverName || "未填寫"}
+                          </div>
+
+                          <div className="mt-2 break-all text-sm text-slate-500">
+                            建立者：{item.createdByName || item.createdBy || "未知"}
+                          </div>
+
+                          <SignatureProgress item={item} />
                         </div>
 
-                        <div className="mt-2 text-sm text-slate-500">
-                          {item.expenseType} ｜ NT$ {item.amount || 0}
-                        </div>
-
-                        <div className="mt-2 text-sm text-slate-500">
-                          領款人：{item.receiverName || "未填寫"}
-                        </div>
-
-                        <div className="mt-2 text-sm text-slate-500">
-                          建立者：{item.createdByName || item.createdBy || "未知"}
-                        </div>
-
-                        <SignatureProgress item={item} />
+                        <span
+                          className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${
+                            statusClassMap[item.status] ||
+                            "bg-slate-100 text-slate-700"
+                          }`}
+                        >
+                          {statusLabelMap[item.status] || item.status || "未設定"}
+                        </span>
                       </div>
 
-                      <span
-                        className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                          statusClassMap[item.status] ||
-                          "bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {statusLabelMap[item.status] || item.status || "未設定"}
-                      </span>
-                    </div>
-
-                    <div className="mt-4 flex flex-wrap gap-3">
-                      {item.status === "approved" ? (
-                        <>
-                          <button
-                            type="button"
-                            disabled={loading}
-                            onClick={() => generatePdfFromRecord(item)}
-                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-                          >
-                            產生 PDF
-                          </button>
-
-                          {isFinanceRole ? (
+                      <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                        {item.status === "approved" ? (
+                          <>
                             <button
                               type="button"
                               disabled={loading}
-                              onClick={() => deleteFinanceRecord(item.id)}
-                              className={`rounded-xl px-4 py-2 text-sm font-semibold text-white ${
-                                deleteConfirmId === item.id
-                                  ? "bg-red-700 hover:bg-red-800"
-                                  : "bg-red-500 hover:bg-red-600"
-                              }`}
+                              onClick={() => generatePdfFromRecord(item)}
+                              className="w-full rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 sm:w-auto"
                             >
-                              {deleteConfirmId === item.id
-                                ? "確認刪除此單據"
-                                : "刪除此單據"}
+                              產生 PDF
                             </button>
-                          ) : null}
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => loadRecordToForm(item)}
-                            className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-                              isPresident &&
-                              item.status === "pending_president_review"
-                                ? "bg-slate-900 text-white hover:bg-slate-800"
-                                : "border border-slate-300 text-slate-700 hover:bg-slate-50"
-                            }`}
-                          >
-                            {isPresident &&
-                            item.status === "pending_president_review"
-                              ? "確認並簽名"
-                              : "載入單據 / 簽名 / 產生 PDF"}
-                          </button>
 
-                          {!isPresident &&
-                          item.receiverSignatureToken &&
-                          item.status === "pending_receiver_signature" ? (
+                            {isFinanceRole ? (
+                              <button
+                                type="button"
+                                disabled={loading}
+                                onClick={() => deleteFinanceRecord(item.id)}
+                                className={`w-full rounded-xl px-4 py-2 text-sm font-semibold text-white sm:w-auto ${
+                                  deleteConfirmId === item.id
+                                    ? "bg-red-700 hover:bg-red-800"
+                                    : "bg-red-500 hover:bg-red-600"
+                                }`}
+                              >
+                                {deleteConfirmId === item.id
+                                  ? "確認刪除此單據"
+                                  : "刪除此單據"}
+                              </button>
+                            ) : null}
+                          </>
+                        ) : (
+                          <>
                             <button
                               type="button"
-                              onClick={() => {
-                                const link = `${window.location.origin}/finance/sign/${item.id}?token=${item.receiverSignatureToken}`;
-                                navigator.clipboard.writeText(link);
-                                setMessage("已複製領款人簽名連結，可傳給對方簽名。");
-                              }}
-                              className="rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                              onClick={() => loadRecordToForm(item)}
+                              className={`w-full rounded-xl px-4 py-2 text-sm font-semibold sm:w-auto ${
+                                isPresident &&
+                                item.status === "pending_president_review"
+                                  ? "bg-slate-900 text-white hover:bg-slate-800"
+                                  : "border border-slate-300 text-slate-700 hover:bg-slate-50"
+                              }`}
                             >
-                              複製領款人簽名連結
+                              {isPresident &&
+                              item.status === "pending_president_review"
+                                ? "確認並簽名"
+                                : "載入單據 / 簽名 / 產生 PDF"}
                             </button>
-                          ) : null}
-                        </>
-                      )}
-                    </div>
 
-                    {isPresident && item.status !== "approved" ? (
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <button
-                          type="button"
-                          onClick={() => updateRecordStatus(item.id, "returned")}
-                          className="rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600"
-                        >
-                          退回修改
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => updateRecordStatus(item.id, "rejected")}
-                          className="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600"
-                        >
-                          拒絕
-                        </button>
+                            {!isPresident &&
+                            item.receiverSignatureToken &&
+                            item.status === "pending_receiver_signature" ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const link = `${window.location.origin}/finance/sign/${item.id}?token=${item.receiverSignatureToken}`;
+                                  navigator.clipboard.writeText(link);
+                                  setMessage("已複製領款人簽名連結，可傳給對方簽名。");
+                                }}
+                                className="w-full rounded-xl bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 sm:w-auto"
+                              >
+                                複製領款人簽名連結
+                              </button>
+                            ) : null}
+                          </>
+                        )}
                       </div>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
 
-          <div className="rounded-3xl bg-white p-8 shadow-sm">
-            <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-              PDF PREVIEW
+                      {isPresident && item.status !== "approved" ? (
+                        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => updateRecordStatus(item.id, "returned")}
+                            className="w-full rounded-xl bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-600 sm:w-auto"
+                          >
+                            退回修改
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => updateRecordStatus(item.id, "rejected")}
+                            className="w-full rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white hover:bg-red-600 sm:w-auto"
+                          >
+                            拒絕
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
-            <h2 className="mt-3 text-3xl font-black text-slate-900">
-              PDF 預覽
-            </h2>
+            <div className="min-w-0 rounded-3xl bg-white p-5 shadow-sm sm:p-6 lg:p-8">
+              <div className="text-xs font-semibold tracking-[0.2em] text-amber-700 sm:text-sm">
+                PDF PREVIEW
+              </div>
 
-            <p className="mt-4 leading-8 text-slate-600">
-              下方是即將輸出的財務證明版面。正式 PDF 會以 A4 固定比例輸出。
-            </p>
+              <h2 className="mt-3 break-words text-2xl font-black text-slate-900 sm:text-3xl">
+                PDF 預覽
+              </h2>
 
-            <div className="mt-6 overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-4">
+              <p className="mt-4 text-sm leading-8 text-slate-600 sm:text-base">
+                下方是即將輸出的財務證明版面。正式 PDF 會以 A4 固定比例輸出。
+              </p>
+
+              <div className="mt-6 w-full max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-slate-100 p-3 sm:p-4">
+                <div
+                  style={{
+                    transform: "scale(0.55)",
+                    transformOrigin: "top left",
+                    width: "794px",
+                    height: "650px",
+                  }}
+                  className="sm:!h-[760px] sm:!scale-[0.65]"
+                >
+                  <FinancePdfTemplate
+                    form={form}
+                    amountChinese={amountChinese}
+                    receipts={receiptImages}
+                    receiverSignature={receiverSignature}
+                    treasurerSignature={treasurerSignature}
+                    presidentSignature={presidentSignature}
+                    clubSeal={clubSeal}
+                  />
+                </div>
+              </div>
+
               <div
                 style={{
-                  transform: "scale(0.65)",
-                  transformOrigin: "top left",
+                  position: "fixed",
+                  left: "-99999px",
+                  top: 0,
                   width: "794px",
-                  height: "760px",
+                  height: "1123px",
+                  background: "#ffffff",
+                  zIndex: -1,
+                  overflow: "hidden",
                 }}
               >
-                <FinancePdfTemplate
-                  form={form}
-                  amountChinese={amountChinese}
-                  receipts={receiptImages}
-                  receiverSignature={receiverSignature}
-                  treasurerSignature={treasurerSignature}
-                  presidentSignature={presidentSignature}
-                  clubSeal={clubSeal}
-                />
-              </div>
-            </div>
-
-            <div
-              style={{
-                position: "fixed",
-                left: "-99999px",
-                top: 0,
-                width: "794px",
-                height: "1123px",
-                background: "#ffffff",
-                zIndex: -1,
-                overflow: "hidden",
-              }}
-            >
-              <div ref={pdfRef}>
-                <FinancePdfTemplate
-                  form={exportData?.form || form}
-                  amountChinese={exportData?.amountChinese || amountChinese}
-                  receipts={exportData?.receiptImages || receiptImages}
-                  receiverSignature={
-                    exportData?.receiverSignature || receiverSignature
-                  }
-                  treasurerSignature={
-                    exportData?.treasurerSignature || treasurerSignature
-                  }
-                  presidentSignature={
-                    exportData?.presidentSignature || presidentSignature
-                  }
-                  clubSeal={exportData?.clubSeal || clubSeal}
-                />
+                <div ref={pdfRef}>
+                  <FinancePdfTemplate
+                    form={exportData?.form || form}
+                    amountChinese={exportData?.amountChinese || amountChinese}
+                    receipts={exportData?.receiptImages || receiptImages}
+                    receiverSignature={
+                      exportData?.receiverSignature || receiverSignature
+                    }
+                    treasurerSignature={
+                      exportData?.treasurerSignature || treasurerSignature
+                    }
+                    presidentSignature={
+                      exportData?.presidentSignature || presidentSignature
+                    }
+                    clubSeal={exportData?.clubSeal || clubSeal}
+                  />
+                </div>
               </div>
             </div>
           </div>
