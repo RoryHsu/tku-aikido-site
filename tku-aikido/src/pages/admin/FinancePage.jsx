@@ -62,19 +62,19 @@ const pdfLabelCell = {
   background: "#f0f0f0",
   fontWeight: "700",
   textAlign: "center",
-  padding: "9px",
+  padding: "7px",
   width: "16%",
 };
 
 const pdfValueCell = {
   border: "1px solid #111",
-  padding: "9px",
-  minHeight: "34px",
+  padding: "7px",
+  minHeight: "30px",
 };
 
 const pdfSignatureCell = {
   border: "1px solid #111",
-  padding: "10px",
+  padding: "8px",
   verticalAlign: "top",
 };
 
@@ -93,7 +93,6 @@ function toTaiwanYear(dateString) {
 
 function numberToChineseAmount(inputAmount) {
   const amount = Number(inputAmount);
-
   if (!Number.isFinite(amount) || amount <= 0) return "";
 
   const num = Math.floor(amount);
@@ -183,13 +182,13 @@ function createSignatureToken() {
 
 function PdfCheckbox({ checked, label }) {
   return (
-    <span style={{ marginRight: "18px", whiteSpace: "nowrap" }}>
+    <span style={{ marginRight: "14px", whiteSpace: "nowrap" }}>
       <span
         style={{
           display: "inline-block",
-          width: "16px",
+          width: "15px",
           fontWeight: "700",
-          fontSize: "15px",
+          fontSize: "14px",
         }}
       >
         {checked ? "■" : "□"}
@@ -371,14 +370,16 @@ function FinancePdfTemplate({
       className="mx-auto bg-white text-black"
       style={{
         width: "794px",
-        minHeight: "1123px",
-        padding: "46px 54px",
+        height: "1123px",
+        boxSizing: "border-box",
+        padding: "32px 42px",
+        overflow: "hidden",
         fontFamily:
           '"Noto Sans TC", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif',
       }}
     >
-      <div className="mb-3 text-center">
-        <div style={{ fontSize: "18px", fontWeight: "700", letterSpacing: "2px" }}>
+      <div className="mb-2 text-center">
+        <div style={{ fontSize: "16px", fontWeight: "700", letterSpacing: "2px" }}>
           淡江大學合氣道社－財務證明
         </div>
       </div>
@@ -389,7 +390,7 @@ function FinancePdfTemplate({
           borderCollapse: "collapse",
           tableLayout: "fixed",
           border: "2px solid #111",
-          fontSize: "14px",
+          fontSize: "13px",
         }}
       >
         <tbody>
@@ -401,9 +402,9 @@ function FinancePdfTemplate({
                 background: "#444",
                 color: "#fff",
                 textAlign: "center",
-                fontSize: "18px",
+                fontSize: "17px",
                 fontWeight: "700",
-                padding: "10px",
+                padding: "9px",
                 letterSpacing: "3px",
               }}
             >
@@ -443,7 +444,7 @@ function FinancePdfTemplate({
             <td style={pdfLabelCell}>申請補助</td>
             <td style={pdfValueCell}>
               {subsidyTypeOptions.map((item) => (
-                <div key={item} style={{ marginBottom: "4px" }}>
+                <div key={item} style={{ marginBottom: "3px" }}>
                   <PdfCheckbox checked={form.subsidyType === item} label={item} />
                 </div>
               ))}
@@ -456,7 +457,7 @@ function FinancePdfTemplate({
               colSpan="5"
               style={{
                 ...pdfValueCell,
-                height: "92px",
+                height: "78px",
                 verticalAlign: "top",
               }}
             >
@@ -489,18 +490,18 @@ function FinancePdfTemplate({
               colSpan="6"
               style={{
                 border: "1px solid #111",
-                height: "170px",
-                padding: "14px",
+                height: "155px",
+                padding: "12px",
                 verticalAlign: "top",
               }}
             >
-              <div style={{ marginBottom: "10px", fontWeight: "700" }}>
+              <div style={{ marginBottom: "8px", fontWeight: "700" }}>
                 上款已照數領訖　此據
               </div>
 
-              <div style={{ marginBottom: "10px" }}>淡江大學合氣道社台照</div>
+              <div style={{ marginBottom: "8px" }}>淡江大學合氣道社台照</div>
 
-              <div style={{ marginLeft: "310px", lineHeight: "34px" }}>
+              <div style={{ marginLeft: "300px", lineHeight: "29px" }}>
                 <div>
                   ◆ 領款人簽章：
                   {receiverSignature ? (
@@ -508,8 +509,8 @@ function FinancePdfTemplate({
                       src={receiverSignature}
                       alt="領款人簽章"
                       style={{
-                        width: "150px",
-                        height: "42px",
+                        width: "145px",
+                        height: "40px",
                         objectFit: "contain",
                         verticalAlign: "middle",
                       }}
@@ -552,27 +553,28 @@ function FinancePdfTemplate({
               colSpan="6"
               style={{
                 border: "1px solid #111",
-                height: "390px",
-                padding: "12px",
+                height: "330px",
+                padding: "10px",
                 verticalAlign: "top",
               }}
             >
-              <div style={{ fontWeight: "700", marginBottom: "8px" }}>
+              <div style={{ fontWeight: "700", marginBottom: "6px" }}>
                 費用明細及收據黏貼處（浮貼）
               </div>
 
-              <div style={{ fontSize: "13px", marginBottom: "10px" }}>
+              <div style={{ fontSize: "12px", marginBottom: "8px" }}>
                 ※ 申請校補助之款項請貼收據影本；社費支出之款項請貼正本收據
               </div>
 
               <div
                 style={{
                   border: "1px dashed #777",
-                  minHeight: "305px",
-                  padding: "10px",
+                  height: "270px",
+                  padding: "8px",
                   display: "grid",
                   gridTemplateColumns: receipts.length >= 2 ? "1fr 1fr" : "1fr",
-                  gap: "10px",
+                  gap: "8px",
+                  boxSizing: "border-box",
                 }}
               >
                 {receipts.length > 0 ? (
@@ -585,7 +587,8 @@ function FinancePdfTemplate({
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        minHeight: "135px",
+                        minHeight: "118px",
+                        overflow: "hidden",
                       }}
                     >
                       <img
@@ -593,7 +596,7 @@ function FinancePdfTemplate({
                         alt={`收據 ${index + 1}`}
                         style={{
                           maxWidth: "100%",
-                          maxHeight: receipts.length >= 2 ? "135px" : "280px",
+                          maxHeight: receipts.length >= 2 ? "118px" : "250px",
                           objectFit: "contain",
                         }}
                       />
@@ -606,7 +609,7 @@ function FinancePdfTemplate({
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      height: "280px",
+                      height: "250px",
                     }}
                   >
                     收據 / 發票 JPG 黏貼處
@@ -617,49 +620,49 @@ function FinancePdfTemplate({
           </tr>
 
           <tr>
-            <td colSpan="2" style={{ ...pdfSignatureCell, height: "105px" }}>
+            <td colSpan="2" style={{ ...pdfSignatureCell, height: "92px" }}>
               <div style={{ fontWeight: "700" }}>經手人（財務長）簽章：</div>
               {treasurerSignature ? (
                 <img
                   src={treasurerSignature}
                   alt="財務長簽章"
                   style={{
-                    width: "180px",
-                    height: "62px",
+                    width: "170px",
+                    height: "56px",
                     objectFit: "contain",
-                    marginTop: "8px",
+                    marginTop: "5px",
                   }}
                 />
               ) : null}
             </td>
 
-            <td colSpan="3" style={{ ...pdfSignatureCell, height: "105px" }}>
+            <td colSpan="3" style={{ ...pdfSignatureCell, height: "92px" }}>
               <div style={{ fontWeight: "700" }}>社長簽章：</div>
               {presidentSignature ? (
                 <img
                   src={presidentSignature}
                   alt="社長簽章"
                   style={{
-                    width: "180px",
-                    height: "62px",
+                    width: "170px",
+                    height: "56px",
                     objectFit: "contain",
-                    marginTop: "8px",
+                    marginTop: "5px",
                   }}
                 />
               ) : null}
             </td>
 
-            <td style={{ ...pdfSignatureCell, height: "105px" }}>
+            <td style={{ ...pdfSignatureCell, height: "92px" }}>
               <div style={{ fontWeight: "700" }}>社章</div>
               {clubSeal ? (
                 <img
                   src={clubSeal}
                   alt="社章"
                   style={{
-                    width: "72px",
-                    height: "72px",
+                    width: "66px",
+                    height: "66px",
                     objectFit: "contain",
-                    marginTop: "4px",
+                    marginTop: "3px",
                   }}
                 />
               ) : null}
@@ -690,6 +693,7 @@ export default function FinancePage() {
   const [fetching, setFetching] = useState(true);
   const [message, setMessage] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState("");
+  const [pendingPdfRecordId, setPendingPdfRecordId] = useState("");
 
   const role = profile?.role || "";
   const isPresident = role === "president";
@@ -720,6 +724,19 @@ export default function FinancePage() {
     fetchClubSeal();
     fetchRecords();
   }, []);
+
+  useEffect(() => {
+    if (!pendingPdfRecordId) return;
+    if (currentRecordId !== pendingPdfRecordId) return;
+    if (currentStatus !== "approved") return;
+
+    const timer = setTimeout(() => {
+      generatePdf();
+      setPendingPdfRecordId("");
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [pendingPdfRecordId, currentRecordId, currentStatus, form, receiptImages]);
 
   const fetchClubSeal = async () => {
     try {
@@ -809,6 +826,7 @@ export default function FinancePage() {
     setTreasurerSignature("");
     setPresidentSignature("");
     setDeleteConfirmId("");
+    setPendingPdfRecordId("");
     setMessage("");
   };
 
@@ -945,6 +963,17 @@ export default function FinancePage() {
     } else {
       setMessage("已載入單據。");
     }
+  };
+
+  const generatePdfFromRecord = (record) => {
+    if (!record || record.status !== "approved") {
+      setMessage("此單據尚未完成，不能直接產生 PDF。");
+      return;
+    }
+
+    loadRecordToForm(record);
+    setPendingPdfRecordId(record.id);
+    setMessage("正在準備 PDF，請稍候...");
   };
 
   const resubmitReturnedRecordWithoutReceiverResign = async () => {
@@ -1173,29 +1202,38 @@ export default function FinancePage() {
 
     try {
       const canvas = await html2canvas(pdfRef.current, {
-        scale: 2,
+        scale: 1.35,
         backgroundColor: "#ffffff",
         useCORS: true,
+        width: 794,
+        height: 1123,
         windowWidth: 794,
-        windowHeight: pdfRef.current.scrollHeight,
+        windowHeight: 1123,
+        scrollX: 0,
+        scrollY: 0,
       });
 
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
+      const imgData = canvas.toDataURL("image/jpeg", 0.82);
+
+      const pdf = new jsPDF({
+        orientation: "p",
+        unit: "mm",
+        format: "a4",
+        compress: true,
+      });
 
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
 
-      const imgWidth = pageWidth;
-      const imgHeight = (canvas.height * imgWidth) / canvas.width;
-
       pdf.addImage(
         imgData,
-        "PNG",
+        "JPEG",
         0,
         0,
-        imgWidth,
-        imgHeight > pageHeight ? pageHeight : imgHeight
+        pageWidth,
+        pageHeight,
+        undefined,
+        "FAST"
       );
 
       const safeActivityName = form.activityName || "財務單據";
@@ -1686,13 +1724,15 @@ export default function FinancePage() {
                 產生正式 PDF
               </button>
 
-              <button
-                type="button"
-                onClick={clearForm}
-                className="rounded-xl border border-red-300 px-5 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
-              >
-                清空表單
-              </button>
+              {currentStatus !== "approved" ? (
+                <button
+                  type="button"
+                  onClick={clearForm}
+                  className="rounded-xl border border-red-300 px-5 py-3 text-sm font-semibold text-red-600 hover:bg-red-50"
+                >
+                  清空表單
+                </button>
+              ) : null}
             </div>
           </form>
         </div>
@@ -1756,10 +1796,8 @@ export default function FinancePage() {
                         <>
                           <button
                             type="button"
-                            onClick={() => {
-                              loadRecordToForm(item);
-                              setMessage("已載入已完成單據。請到左側按「產生正式 PDF」。");
-                            }}
+                            disabled={loading}
+                            onClick={() => generatePdfFromRecord(item)}
                             className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
                           >
                             產生 PDF
@@ -1882,8 +1920,10 @@ export default function FinancePage() {
                 left: "-99999px",
                 top: 0,
                 width: "794px",
+                height: "1123px",
                 background: "#ffffff",
                 zIndex: -1,
+                overflow: "hidden",
               }}
             >
               <div ref={pdfRef}>
