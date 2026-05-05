@@ -180,6 +180,36 @@ function createSignatureToken() {
   return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function normalizeRecordToExportData(record, clubSeal) {
+  const form = {
+    activityName: record.activityName || "",
+    activityCode: record.activityCode || "",
+    expenseType: record.expenseType || "活動費",
+    expenseCode: record.expenseCode || "",
+    date: record.date || "",
+    subsidyType: record.subsidyType || "社費支出",
+    note: record.note || "",
+    amount: record.amount ? String(record.amount) : "",
+    receiverName: record.receiverName || "",
+    receiverType: record.receiverType || "淡江合氣道社員",
+    nonMemberNote: record.nonMemberNote || "",
+    studentId: record.studentId || "",
+    description: record.description || "",
+  };
+
+  return {
+    id: record.id,
+    form,
+    amountChinese:
+      record.amountChinese || numberToChineseAmount(record.amount || form.amount),
+    receiptImages: record.receiptImages || [],
+    receiverSignature: record.receiverSignature || "",
+    treasurerSignature: record.treasurerSignature || "",
+    presidentSignature: record.presidentSignature || "",
+    clubSeal: clubSeal || "",
+  };
+}
+
 function PdfCheckbox({ checked, label }) {
   return (
     <span style={{ marginRight: "14px", whiteSpace: "nowrap" }}>
@@ -218,7 +248,7 @@ function SignatureProgress({ item }) {
   );
 }
 
-function SignaturePad({ label, value, onChange }) {
+function SignaturePad({ label, value, onChange, disabled = false }) {
   const canvasRef = useRef(null);
   const drawingRef = useRef(false);
 
@@ -264,6 +294,8 @@ function SignaturePad({ label, value, onChange }) {
   };
 
   const startDrawing = (event) => {
+    if (disabled) return;
+
     event.preventDefault();
     event.stopPropagation();
 
@@ -277,6 +309,7 @@ function SignaturePad({ label, value, onChange }) {
   };
 
   const draw = (event) => {
+    if (disabled) return;
     if (!drawingRef.current) return;
 
     event.preventDefault();
@@ -291,6 +324,8 @@ function SignaturePad({ label, value, onChange }) {
   };
 
   const stopDrawing = (event) => {
+    if (disabled) return;
+
     if (event) {
       event.preventDefault();
       event.stopPropagation();
@@ -305,6 +340,8 @@ function SignaturePad({ label, value, onChange }) {
   };
 
   const clearSignature = () => {
+    if (disabled) return;
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
 
@@ -317,13 +354,15 @@ function SignaturePad({ label, value, onChange }) {
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-sm font-semibold text-slate-700">{label}</div>
 
-        <button
-          type="button"
-          onClick={clearSignature}
-          className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
-        >
-          清除
-        </button>
+        {!disabled ? (
+          <button
+            type="button"
+            onClick={clearSignature}
+            className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+          >
+            清除
+          </button>
+        ) : null}
       </div>
 
       <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-2">
@@ -693,12 +732,12 @@ export default function FinancePage() {
   const [fetching, setFetching] = useState(true);
   const [message, setMessage] = useState("");
   const [deleteConfirmId, setDeleteConfirmId] = useState("");
-  const [pendingPdfRecordId, setPendingPdfRecordId] = useState("");
+  const [exportData, setExportData] = useState(null);
 
   const role = profile?.role || "";
   const isPresident = role === "president";
   const isFinanceRole = role === "finance";
-  const isFinance = role === "finance" || role === "president";
+  const isFinancePageAllowed = role === "finance" || role === "president";
 
   const amountChinese = useMemo(() => {
     return numberToChineseAmount(form.amount);
@@ -706,19 +745,22 @@ export default function FinancePage() {
 
   const hasReceiverSigned = Boolean(receiverSignature);
   const isReturned = currentStatus === "returned";
+  const isApproved = currentStatus === "approved";
 
-  const formLocked =
-    !isReturned &&
-    (hasReceiverSigned ||
-      currentStatus === "pending_treasurer_signature" ||
-      currentStatus === "pending_president_review" ||
-      currentStatus === "approved");
+  const mainFieldsLocked =
+    !isFinanceRole ||
+    isApproved ||
+    (!isReturned &&
+      (hasReceiverSigned ||
+        currentStatus === "pending_treasurer_signature" ||
+        currentStatus === "pending_president_review"));
 
-  const canGeneratePdf =
+  const canGenerateCurrentPdf =
     currentStatus === "approved" &&
     receiverSignature?.startsWith("data:image/") &&
     treasurerSignature?.startsWith("data:image/") &&
-    presidentSignature?.startsWith("data:image/");
+    presidentSignature?.startsWith("data:image/") &&
+    Boolean(clubSeal);
 
   useEffect(() => {
     fetchClubSeal();
@@ -726,17 +768,14 @@ export default function FinancePage() {
   }, []);
 
   useEffect(() => {
-    if (!pendingPdfRecordId) return;
-    if (currentRecordId !== pendingPdfRecordId) return;
-    if (currentStatus !== "approved") return;
+    if (!exportData) return;
 
     const timer = setTimeout(() => {
-      generatePdf();
-      setPendingPdfRecordId("");
-    }, 300);
+      downloadExportPdf(exportData);
+    }, 250);
 
     return () => clearTimeout(timer);
-  }, [pendingPdfRecordId, currentRecordId, currentStatus, form, receiptImages]);
+  }, [exportData]);
 
   const fetchClubSeal = async () => {
     try {
@@ -778,6 +817,8 @@ export default function FinancePage() {
   };
 
   const updateForm = (key, value) => {
+    if (mainFieldsLocked) return;
+
     setForm((prev) => ({
       ...prev,
       [key]: value,
@@ -785,8 +826,8 @@ export default function FinancePage() {
   };
 
   const handleReceiptUpload = async (event) => {
-    if (formLocked) {
-      setMessage("領款人簽名後，單據內容已鎖定，不能再修改收據。");
+    if (mainFieldsLocked) {
+      setMessage("目前單據已鎖定，不能再修改收據。");
       return;
     }
 
@@ -806,8 +847,8 @@ export default function FinancePage() {
   };
 
   const removeReceiptImage = (indexToRemove) => {
-    if (formLocked) {
-      setMessage("領款人簽名後，單據內容已鎖定，不能刪除收據。");
+    if (mainFieldsLocked) {
+      setMessage("目前單據已鎖定，不能刪除收據。");
       return;
     }
 
@@ -826,7 +867,6 @@ export default function FinancePage() {
     setTreasurerSignature("");
     setPresidentSignature("");
     setDeleteConfirmId("");
-    setPendingPdfRecordId("");
     setMessage("");
   };
 
@@ -851,6 +891,16 @@ export default function FinancePage() {
   });
 
   const saveRecord = async (status = "draft") => {
+    if (!isFinanceRole) {
+      setMessage("只有財務長可以建立或修改財務證明。");
+      return;
+    }
+
+    if (isApproved) {
+      setMessage("已完成單據已鎖定，不能再修改。");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
     setDeleteConfirmId("");
@@ -957,7 +1007,7 @@ export default function FinancePage() {
     setPresidentSignature(record.presidentSignature || "");
 
     if (record.status === "approved") {
-      setMessage("已載入已完成單據。可以產生正式 PDF。");
+      setMessage("已載入已完成單據。此單據已鎖定，只能產生正式 PDF。");
     } else if (isPresident && record.status === "pending_president_review") {
       setMessage("已載入待社長審核單據。請確認內容、完成社長簽章，然後按「社長簽名並核准」。");
     } else {
@@ -967,16 +1017,26 @@ export default function FinancePage() {
 
   const generatePdfFromRecord = (record) => {
     if (!record || record.status !== "approved") {
-      setMessage("此單據尚未完成，不能直接產生 PDF。");
+      setMessage("此單據尚未完成，不能產生 PDF。");
       return;
     }
 
-    loadRecordToForm(record);
-    setPendingPdfRecordId(record.id);
-    setMessage("正在準備 PDF，請稍候...");
+    if (!clubSeal) {
+      setMessage("尚未讀取社章，不能產生 PDF。");
+      return;
+    }
+
+    const exportPayload = normalizeRecordToExportData(record, clubSeal);
+    setExportData(exportPayload);
+    setMessage("正在產生 PDF，請稍候...");
   };
 
   const resubmitReturnedRecordWithoutReceiverResign = async () => {
+    if (!isFinanceRole) {
+      setMessage("只有財務長可以重新送出退回單據。");
+      return;
+    }
+
     if (!currentRecordId) {
       setMessage("請先從右側列表載入一筆被退回的單據。");
       return;
@@ -1031,6 +1091,11 @@ export default function FinancePage() {
   };
 
   const submitTreasurerSignature = async () => {
+    if (!isFinanceRole) {
+      setMessage("只有財務長可以簽署經手人欄位。");
+      return;
+    }
+
     if (!currentRecordId) {
       setMessage("請先從右側列表載入一筆單據。");
       return;
@@ -1070,8 +1135,18 @@ export default function FinancePage() {
   };
 
   const approveByPresident = async () => {
+    if (!isPresident) {
+      setMessage("只有社長可以核准單據。");
+      return;
+    }
+
     if (!currentRecordId) {
       setMessage("請先從右側列表載入一筆單據。");
+      return;
+    }
+
+    if (currentStatus !== "pending_president_review") {
+      setMessage("此單據目前不是待社長審核狀態。");
       return;
     }
 
@@ -1118,6 +1193,11 @@ export default function FinancePage() {
   };
 
   const updateRecordStatus = async (id, status) => {
+    if (!isPresident) {
+      setMessage("只有社長可以退回或拒絕單據。");
+      return;
+    }
+
     setLoading(true);
     setMessage("");
     setDeleteConfirmId("");
@@ -1142,6 +1222,11 @@ export default function FinancePage() {
   };
 
   const deleteFinanceRecord = async (recordId) => {
+    if (!isFinanceRole) {
+      setMessage("只有財務長可以刪除已完成單據。");
+      return;
+    }
+
     if (!recordId) return;
 
     if (deleteConfirmId !== recordId) {
@@ -1181,28 +1266,18 @@ export default function FinancePage() {
     setLoading(false);
   };
 
-  const generatePdf = async () => {
-    setMessage("");
-    setDeleteConfirmId("");
-
-    if (!canGeneratePdf) {
-      setMessage("流程尚未完成。必須完成領款人簽名、財務長 / 經手人簽名、社長簽名並核准後，才能產生正式 PDF。");
-      return;
-    }
-
-    if (!clubSeal) {
-      setMessage("尚未設定社章，不能產生正式 PDF。");
-      return;
-    }
+  const downloadExportPdf = async (payload) => {
+    if (!payload) return;
 
     if (!pdfRef.current) {
       setMessage("找不到 PDF 模板。");
+      setExportData(null);
       return;
     }
 
     try {
       const canvas = await html2canvas(pdfRef.current, {
-        scale: 1.35,
+        scale: 1.05,
         backgroundColor: "#ffffff",
         useCORS: true,
         width: 794,
@@ -1213,7 +1288,7 @@ export default function FinancePage() {
         scrollY: 0,
       });
 
-      const imgData = canvas.toDataURL("image/jpeg", 0.82);
+      const imgData = canvas.toDataURL("image/jpeg", 0.62);
 
       const pdf = new jsPDF({
         orientation: "p",
@@ -1222,33 +1297,44 @@ export default function FinancePage() {
         compress: true,
       });
 
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
+      pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
 
-      pdf.addImage(
-        imgData,
-        "JPEG",
-        0,
-        0,
-        pageWidth,
-        pageHeight,
-        undefined,
-        "FAST"
-      );
-
-      const safeActivityName = form.activityName || "財務單據";
-      const safeDate = form.date || new Date().toISOString().slice(0, 10);
-      const fileName = `${safeDate}_${safeActivityName}_${form.expenseType}_${form.amount || 0}元.pdf`;
+      const safeActivityName = payload.form.activityName || "財務單據";
+      const safeDate = payload.form.date || new Date().toISOString().slice(0, 10);
+      const fileName = `${safeDate}_${safeActivityName}_${payload.form.expenseType}_${payload.form.amount || 0}元.pdf`;
 
       pdf.save(fileName);
+
       setMessage("正式 PDF 已產生並下載。");
     } catch (err) {
       console.error("generate pdf error:", err);
       setMessage("PDF 產生失敗。");
+    } finally {
+      setExportData(null);
     }
   };
 
-  if (!isFinance) {
+  const generatePdfFromCurrentForm = () => {
+    if (!canGenerateCurrentPdf) {
+      setMessage("流程尚未完成，不能產生正式 PDF。");
+      return;
+    }
+
+    setExportData({
+      id: currentRecordId,
+      form,
+      amountChinese,
+      receiptImages,
+      receiverSignature,
+      treasurerSignature,
+      presidentSignature,
+      clubSeal,
+    });
+
+    setMessage("正在產生 PDF，請稍候...");
+  };
+
+  if (!isFinancePageAllowed) {
     return (
       <AdminLayout>
         <div className="rounded-3xl bg-white p-8 shadow-sm">
@@ -1278,6 +1364,12 @@ export default function FinancePage() {
             社長簽名審核 → 自動套用社章 → 產生正式 PDF。
           </p>
 
+          {!isFinanceRole && !currentRecordId ? (
+            <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-700">
+              社長頁面只能審核、簽名與產生 PDF，不能建立新的財務證明。請從右側列表選擇待審核或已完成單據。
+            </div>
+          ) : null}
+
           {currentRecordId ? (
             <div className="mt-6 rounded-2xl bg-slate-50 px-4 py-4 text-sm leading-7 text-slate-700">
               目前載入單據 ID：
@@ -1288,34 +1380,24 @@ export default function FinancePage() {
                 {statusLabelMap[currentStatus] || currentStatus || "未設定"}
               </span>
             </div>
-          ) : (
+          ) : isFinanceRole ? (
             <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
               先填好資料並建立領款人簽名連結。領款人簽完後，資料會自動進入「待財務長簽名」。
-            </div>
-          )}
-
-          {isPresident && currentStatus === "pending_president_review" ? (
-            <div className="mt-4 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-700">
-              此單據正在等待社長簽名審核。請確認左側資料與右側 PDF 預覽無誤後，在社長簽章區簽名，然後按「社長簽名並核准」。
             </div>
           ) : null}
 
           {currentStatus === "approved" ? (
             <div className="mt-4 rounded-2xl bg-green-50 px-4 py-4 text-sm leading-7 text-green-700">
-              此單據已完成簽核。現在只可產生正式 PDF。
+              此單據已完成簽核，內容已鎖定。現在只可產生正式 PDF。
               {isFinanceRole ? " 財務長也可以刪除此單據。" : ""}
             </div>
           ) : null}
 
-          {currentStatus === "returned" ? (
+          {currentStatus === "returned" && isFinanceRole ? (
             <div className="mt-4 rounded-2xl bg-orange-50 px-4 py-4 text-sm leading-7 text-orange-700">
               此單據已被社長退回。你可以直接修改原本資料，不需要重新建立整張單據。
               若只是備註、活動編號或小錯字，可保留領款人簽名並送回財務長確認；
               若修改金額、領款人、收據或重要內容，建議重新建立領款人簽名連結。
-            </div>
-          ) : formLocked && currentStatus !== "approved" ? (
-            <div className="mt-4 rounded-2xl bg-red-50 px-4 py-4 text-sm leading-7 text-red-700">
-              領款人已簽名，主要單據內容已鎖定。若需修改，請由社長退回後再選擇是否重新建立領款人簽名連結。
             </div>
           ) : null}
 
@@ -1326,7 +1408,7 @@ export default function FinancePage() {
                   所屬活動
                 </label>
                 <input
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.activityName}
                   onChange={(e) => updateForm("activityName", e.target.value)}
@@ -1339,7 +1421,7 @@ export default function FinancePage() {
                   活動編號
                 </label>
                 <input
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.activityCode}
                   onChange={(e) => updateForm("activityCode", e.target.value)}
@@ -1354,7 +1436,7 @@ export default function FinancePage() {
                   費用類別
                 </label>
                 <select
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.expenseType}
                   onChange={(e) => updateForm("expenseType", e.target.value)}
@@ -1372,7 +1454,7 @@ export default function FinancePage() {
                   費用編號
                 </label>
                 <input
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.expenseCode}
                   onChange={(e) => updateForm("expenseCode", e.target.value)}
@@ -1387,7 +1469,7 @@ export default function FinancePage() {
                   領款日期
                 </label>
                 <input
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   type="date"
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.date}
@@ -1400,7 +1482,7 @@ export default function FinancePage() {
                   申請補助
                 </label>
                 <select
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.subsidyType}
                   onChange={(e) => updateForm("subsidyType", e.target.value)}
@@ -1420,7 +1502,7 @@ export default function FinancePage() {
                   金額 NT$
                 </label>
                 <input
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   type="number"
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.amount}
@@ -1447,7 +1529,7 @@ export default function FinancePage() {
                 備註
               </label>
               <textarea
-                disabled={formLocked}
+                disabled={mainFieldsLocked}
                 className="min-h-[90px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                 value={form.note}
                 onChange={(e) => updateForm("note", e.target.value)}
@@ -1464,7 +1546,7 @@ export default function FinancePage() {
                     領款人姓名
                   </label>
                   <input
-                    disabled={formLocked}
+                    disabled={mainFieldsLocked}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                     value={form.receiverName}
                     onChange={(e) => updateForm("receiverName", e.target.value)}
@@ -1477,7 +1559,7 @@ export default function FinancePage() {
                     身分別
                   </label>
                   <select
-                    disabled={formLocked}
+                    disabled={mainFieldsLocked}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                     value={form.receiverType}
                     onChange={(e) => updateForm("receiverType", e.target.value)}
@@ -1497,7 +1579,7 @@ export default function FinancePage() {
                     非社員說明
                   </label>
                   <input
-                    disabled={formLocked}
+                    disabled={mainFieldsLocked}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                     value={form.nonMemberNote}
                     onChange={(e) => updateForm("nonMemberNote", e.target.value)}
@@ -1511,7 +1593,7 @@ export default function FinancePage() {
                   學號 / 身分證號
                 </label>
                 <input
-                  disabled={formLocked}
+                  disabled={mainFieldsLocked}
                   className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                   value={form.studentId}
                   onChange={(e) => updateForm("studentId", e.target.value)}
@@ -1525,7 +1607,7 @@ export default function FinancePage() {
                 費用明細說明
               </label>
               <textarea
-                disabled={formLocked}
+                disabled={mainFieldsLocked}
                 className="min-h-[100px] w-full rounded-xl border border-slate-300 px-4 py-3 outline-none disabled:bg-slate-100"
                 value={form.description}
                 onChange={(e) => updateForm("description", e.target.value)}
@@ -1545,17 +1627,13 @@ export default function FinancePage() {
               </div>
 
               <input
-                disabled={formLocked}
+                disabled={mainFieldsLocked}
                 type="file"
                 accept="image/*"
                 multiple
                 onChange={handleReceiptUpload}
                 className="mt-3 block w-full rounded-xl border border-slate-300 px-4 py-3 text-sm disabled:bg-slate-100"
               />
-
-              <p className="mt-2 text-xs leading-6 text-slate-400">
-                可一次選擇多張圖片。Windows 可按住 Ctrl 選多張；也可以分批上傳，系統會自動累加。
-              </p>
 
               {receiptImages.length > 0 ? (
                 <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -1564,7 +1642,7 @@ export default function FinancePage() {
                       key={`${item.slice(0, 30)}-${index}`}
                       className="relative rounded-xl border border-slate-200 bg-slate-50 p-2"
                     >
-                      {!formLocked ? (
+                      {!mainFieldsLocked ? (
                         <button
                           type="button"
                           onClick={() => removeReceiptImage(index)}
@@ -1593,35 +1671,20 @@ export default function FinancePage() {
               )}
             </div>
 
-            {currentStatus === "pending_treasurer_signature" ||
-            currentStatus === "pending_president_review" ||
-            currentStatus === "approved" ? (
+            {isFinanceRole && currentStatus === "pending_treasurer_signature" ? (
               <SignaturePad
                 label="經手人 / 財務長簽章"
                 value={treasurerSignature}
                 onChange={setTreasurerSignature}
               />
-            ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-500">
-                領款人尚未完成線上簽名前，財務長 / 經手人簽章區會先鎖定。
-              </div>
-            )}
+            ) : null}
 
-            {isPresident ? (
-              <>
-                {currentStatus === "pending_president_review" ||
-                currentStatus === "approved" ? (
-                  <SignaturePad
-                    label="社長簽章"
-                    value={presidentSignature}
-                    onChange={setPresidentSignature}
-                  />
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5 text-sm leading-7 text-slate-500">
-                    單據尚未送到社長審核階段，社長簽章區會先鎖定。
-                  </div>
-                )}
-              </>
+            {isPresident && currentStatus === "pending_president_review" ? (
+              <SignaturePad
+                label="社長簽章"
+                value={presidentSignature}
+                onChange={setPresidentSignature}
+              />
             ) : null}
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
@@ -1654,7 +1717,7 @@ export default function FinancePage() {
             ) : null}
 
             <div className="flex flex-wrap gap-3">
-              {!formLocked ? (
+              {isFinanceRole && !mainFieldsLocked ? (
                 <>
                   <button
                     type="button"
@@ -1689,7 +1752,7 @@ export default function FinancePage() {
                 </>
               ) : null}
 
-              {currentStatus === "pending_treasurer_signature" ? (
+              {isFinanceRole && currentStatus === "pending_treasurer_signature" ? (
                 <button
                   type="button"
                   disabled={loading}
@@ -1711,20 +1774,18 @@ export default function FinancePage() {
                 </button>
               ) : null}
 
-              <button
-                type="button"
-                disabled={!canGeneratePdf || !clubSeal}
-                onClick={generatePdf}
-                className={`rounded-xl px-5 py-3 text-sm font-semibold ${
-                  canGeneratePdf && clubSeal
-                    ? "bg-slate-900 text-white hover:bg-slate-800"
-                    : "cursor-not-allowed bg-slate-300 text-slate-500"
-                }`}
-              >
-                產生正式 PDF
-              </button>
+              {currentStatus === "approved" ? (
+                <button
+                  type="button"
+                  disabled={!canGenerateCurrentPdf || loading}
+                  onClick={generatePdfFromCurrentForm}
+                  className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+                >
+                  產生正式 PDF
+                </button>
+              ) : null}
 
-              {currentStatus !== "approved" ? (
+              {isFinanceRole && currentStatus !== "approved" ? (
                 <button
                   type="button"
                   onClick={clearForm}
@@ -1798,7 +1859,7 @@ export default function FinancePage() {
                             type="button"
                             disabled={loading}
                             onClick={() => generatePdfFromRecord(item)}
-                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800"
+                            className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300"
                           >
                             產生 PDF
                           </button>
@@ -1826,12 +1887,14 @@ export default function FinancePage() {
                             type="button"
                             onClick={() => loadRecordToForm(item)}
                             className={`rounded-xl px-4 py-2 text-sm font-semibold ${
-                              isPresident && item.status === "pending_president_review"
+                              isPresident &&
+                              item.status === "pending_president_review"
                                 ? "bg-slate-900 text-white hover:bg-slate-800"
                                 : "border border-slate-300 text-slate-700 hover:bg-slate-50"
                             }`}
                           >
-                            {isPresident && item.status === "pending_president_review"
+                            {isPresident &&
+                            item.status === "pending_president_review"
                               ? "確認並簽名"
                               : "載入單據 / 簽名 / 產生 PDF"}
                           </button>
@@ -1890,7 +1953,7 @@ export default function FinancePage() {
             </h2>
 
             <p className="mt-4 leading-8 text-slate-600">
-              下方是即將輸出的財務證明版面。必須完成完整簽核流程後，才能產生正式 PDF。
+              下方是即將輸出的財務證明版面。正式 PDF 會以 A4 固定比例輸出。
             </p>
 
             <div className="mt-6 overflow-auto rounded-2xl border border-slate-200 bg-slate-100 p-4">
@@ -1928,13 +1991,19 @@ export default function FinancePage() {
             >
               <div ref={pdfRef}>
                 <FinancePdfTemplate
-                  form={form}
-                  amountChinese={amountChinese}
-                  receipts={receiptImages}
-                  receiverSignature={receiverSignature}
-                  treasurerSignature={treasurerSignature}
-                  presidentSignature={presidentSignature}
-                  clubSeal={clubSeal}
+                  form={exportData?.form || form}
+                  amountChinese={exportData?.amountChinese || amountChinese}
+                  receipts={exportData?.receiptImages || receiptImages}
+                  receiverSignature={
+                    exportData?.receiverSignature || receiverSignature
+                  }
+                  treasurerSignature={
+                    exportData?.treasurerSignature || treasurerSignature
+                  }
+                  presidentSignature={
+                    exportData?.presidentSignature || presidentSignature
+                  }
+                  clubSeal={exportData?.clubSeal || clubSeal}
                 />
               </div>
             </div>
