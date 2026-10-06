@@ -37,10 +37,10 @@ export default function Footer() {
           </a>
 
           <a
-            href="mailto:30190@tkueca.org"
+            href="mailto:3019@tkueca.org"
             className="block transition hover:text-white"
           >
-            Email：30190@tkueca.org
+            Email：3019@tkueca.org
           </a>
 
         </div>
