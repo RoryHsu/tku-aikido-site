@@ -12,7 +12,7 @@ import {
   Users,
 } from "lucide-react";
 import AdminLayout from "../../components/AdminLayout";
-import { roleLabelMap } from "../../components/adminMenu";
+import { roleLabelOf } from "../../components/adminMenu";
 import { useAuth } from "../../context/AuthContext";
 import { db } from "../../lib/firebase";
 
@@ -226,7 +226,7 @@ export default function Dashboard() {
   const { profile, currentUser } = useAuth();
 
   const role = profile?.role || "";
-  const roleLabel = roleLabelMap[role] || role || "未設定";
+  const roleLabel = roleLabelOf(profile);
   const cards = cardsByRole[role] || [];
 
   const [summary, setSummary] = useState({ todos: [], upcoming: [], ready: false });

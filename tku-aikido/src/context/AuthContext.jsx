@@ -11,6 +11,7 @@ import {
   getDoc,
   getDocs,
   query,
+  updateDoc,
   where,
 } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
@@ -29,7 +30,8 @@ export function AuthProvider({ children }) {
     }
 
     // 開發者帳號（role: "developer"）在後台擁有和社長一樣的全部功能，
-    // 但不會出現在幹部名單，也不受交接影響
+    // 但不會出現在幹部名單，也不受交接影響。
+    // previewRole 有值時，開發者會以那個職位的權限使用後台（Firestore 規則也一樣）
     const toProfile = (snapId, data) => ({
       id: snapId,
       uid: user.uid,
@@ -37,7 +39,17 @@ export function AuthProvider({ children }) {
       name: data.name || user.displayName || "",
       role: data.role || "",
       ...data,
-      ...(data.role === "developer" ? { role: "president", isDeveloper: true } : {}),
+      ...(data.role === "developer"
+        ? {
+            role: !data.previewRole
+              ? "president"
+              : data.previewRole === "none"
+                ? ""
+                : data.previewRole,
+            isDeveloper: true,
+            previewRole: data.previewRole || "",
+          }
+        : {}),
     });
 
     const emailKey = (user.email || "").toLowerCase();
@@ -138,6 +150,13 @@ export function AuthProvider({ children }) {
     return fetchUserProfile(auth.currentUser);
   };
 
+  // 開發者切換預覽職位（空字串 = 回到開發者模式）
+  const setPreviewRole = async (previewRole) => {
+    if (!profile?.isDeveloper) return null;
+    await updateDoc(doc(db, "users", profile.id), { previewRole });
+    return refreshProfile();
+  };
+
   const value = {
     currentUser,
     profile,
@@ -146,6 +165,7 @@ export function AuthProvider({ children }) {
     logout,
     resetPassword,
     refreshProfile,
+    setPreviewRole,
   };
 
   return (

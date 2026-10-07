@@ -1,16 +1,14 @@
 import { Link, NavLink } from "react-router-dom";
 import { ExternalLink, LogOut, X } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { adminMenuItems, roleLabelMap } from "./adminMenu";
+import { adminMenuItems, roleLabelOf } from "./adminMenu";
 import logo from "../assets/brand/logo.webp";
 
 export default function AdminSidebar({ open = false, onClose }) {
   const { profile, logout } = useAuth();
 
   const role = profile?.role || "";
-  const roleLabel = profile?.isDeveloper
-    ? "開發者"
-    : roleLabelMap[role] || role || "未設定";
+  const roleLabel = roleLabelOf(profile);
 
   const visibleMenuItems = adminMenuItems.filter((item) =>
     item.roles.includes(role)
