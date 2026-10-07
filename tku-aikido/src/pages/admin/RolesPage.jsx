@@ -176,10 +176,14 @@ export default function RolesPage() {
   /**
    * 把舊格式（文件 ID 是亂數）的幹部資料，轉成以 Email 當文件 ID 的新格式。
    * 只有社長打開這一頁時會執行；同一個 Email 已經有新格式資料時，直接刪掉舊的重複資料。
+   * 開發者帳號不轉換（社長沒有權限修改開發者帳號）。
    */
   const migrateLegacyUsers = async (list) => {
     const legacy = list.filter(
-      (user) => emailKeyOf(user) && user.id !== emailKeyOf(user)
+      (user) =>
+        user.role !== "developer" &&
+        emailKeyOf(user) &&
+        user.id !== emailKeyOf(user)
     );
     if (legacy.length === 0) return false;
 
@@ -210,10 +214,18 @@ export default function RolesPage() {
         ...docItem.data(),
       }));
 
-      if (profile?.role === "president" && (await migrateLegacyUsers(list))) {
-        const again = await getDocs(collection(db, "users"));
-        list = again.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }));
-        await refreshProfile();
+      // 轉換失敗不影響名單顯示，下次打開這一頁會再試一次
+      if (profile?.role === "president") {
+        try {
+          if (await migrateLegacyUsers(list)) {
+            const again = await getDocs(collection(db, "users"));
+            list = again.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }));
+            await refreshProfile();
+          }
+        } catch (err) {
+          console.error("migrate users error:", err);
+          notify("error", `舊格式幹部資料轉換失敗（${err.code || err.message}），名單仍可正常使用。`);
+        }
       }
 
       // 開發者帳號不顯示在名單中，也不能被設定或交接
@@ -226,7 +238,7 @@ export default function RolesPage() {
       setUserList(list);
     } catch (err) {
       console.error("fetch users error:", err);
-      notify("error", "讀取幹部資料失敗");
+      notify("error", `讀取幹部資料失敗（${err.code || err.message}）`);
     }
     setFetching(false);
   };
