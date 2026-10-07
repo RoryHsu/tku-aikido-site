@@ -1,8 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { collection, getDocs, orderBy, query, where } from "firebase/firestore";
 import { CalendarDays, Clock3, MapPin } from "lucide-react";
-import { db } from "../lib/firebase";
+import { fetchPublishedEvents } from "../lib/publicEvents";
 
 function truncate(text, length = 120) {
   if (!text) return "";
@@ -19,18 +18,7 @@ export default function Events() {
       setLoading(true);
 
       try {
-        const q = query(
-          collection(db, "events"),
-          where("published", "==", true),
-          orderBy("createdAt", "desc")
-        );
-
-        const snapshot = await getDocs(q);
-        const data = snapshot.docs.map((docItem) => ({
-          id: docItem.id,
-          ...docItem.data(),
-        }));
-
+        const data = await fetchPublishedEvents();
         setEvents(data);
       } catch (error) {
         console.error("fetch events error:", error);
