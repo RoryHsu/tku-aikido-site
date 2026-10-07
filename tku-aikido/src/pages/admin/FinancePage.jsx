@@ -35,7 +35,7 @@ const statusClassMap = {
   draft: "bg-slate-100 text-slate-700",
   pending_receiver_signature: "bg-blue-100 text-blue-700",
   pending_treasurer_signature: "bg-purple-100 text-purple-700",
-  pending_president_review: "bg-amber-100 text-amber-700",
+  pending_president_review: "bg-yellow-100 text-yellow-800",
   approved: "bg-green-100 text-green-700",
   returned: "bg-orange-100 text-orange-700",
   rejected: "bg-red-100 text-red-700",
@@ -713,6 +713,42 @@ function FinancePdfTemplate({
   );
 }
 
+// PDF 預覽：依外框寬度自動縮放 A4 版面，整張都看得到、不會被切掉
+function FitToWidth({ baseWidth, children }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [size, setSize] = useState({ scale: 0, height: 0 });
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return undefined;
+
+    const observer = new ResizeObserver(() => {
+      const scale = Math.min(1, outer.clientWidth / baseWidth);
+      setSize({ scale, height: inner.offsetHeight * scale });
+    });
+    observer.observe(outer);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [baseWidth]);
+
+  return (
+    <div ref={outerRef} className="w-full overflow-hidden" style={{ height: size.height }}>
+      <div
+        ref={innerRef}
+        style={{
+          width: baseWidth,
+          transform: `scale(${size.scale})`,
+          transformOrigin: "top left",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export default function FinancePage() {
   const { currentUser, profile } = useAuth();
   const pdfRef = useRef(null);
@@ -721,6 +757,10 @@ export default function FinancePage() {
   const [currentStatus, setCurrentStatus] = useState("");
   const [form, setForm] = useState(initialForm);
   const [records, setRecords] = useState([]);
+
+  // 單據列表搜尋與狀態篩選
+  const [recordKeyword, setRecordKeyword] = useState("");
+  const [recordStatus, setRecordStatus] = useState("all");
   const [receiptImages, setReceiptImages] = useState([]);
   const [receiverSignature, setReceiverSignature] = useState("");
   const [treasurerSignature, setTreasurerSignature] = useState("");
@@ -791,6 +831,17 @@ export default function FinancePage() {
       setMessage("讀取社章失敗，PDF 可能暫時無法自動套用社章。");
     }
   };
+
+  const filteredRecords = useMemo(() => {
+    const kw = recordKeyword.trim().toLowerCase();
+    return records.filter((item) => {
+      if (recordStatus !== "all" && item.status !== recordStatus) return false;
+      if (!kw) return true;
+      return [item.activityName, item.receiverName, item.activityCode, item.expenseCode]
+        .filter(Boolean)
+        .some((text) => String(text).toLowerCase().includes(kw));
+    });
+  }, [records, recordKeyword, recordStatus]);
 
   const fetchRecords = async () => {
     setFetching(true);
@@ -1813,15 +1864,40 @@ export default function FinancePage() {
                 財務單據列表
               </h2>
 
+              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+                <input
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+                  value={recordKeyword}
+                  onChange={(e) => setRecordKeyword(e.target.value)}
+                  placeholder="搜尋活動名稱、領款人、編號…"
+                />
+                <select
+                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none"
+                  value={recordStatus}
+                  onChange={(e) => setRecordStatus(e.target.value)}
+                >
+                  <option value="all">全部狀態</option>
+                  {Object.entries(statusLabelMap).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}（{records.filter((r) => r.status === value).length}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {fetching ? (
                 <div className="mt-6 text-slate-500">載入中...</div>
               ) : records.length === 0 ? (
                 <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
                   目前尚未建立任何財務紀錄。
                 </div>
+              ) : filteredRecords.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
+                  沒有符合條件的單據。
+                </div>
               ) : (
                 <div className="mt-6 space-y-4">
-                  {records.map((item) => (
+                  {filteredRecords.map((item) => (
                     <div
                       key={item.id}
                       className="min-w-0 rounded-2xl border border-slate-200 p-4 sm:p-5"
@@ -1961,16 +2037,8 @@ export default function FinancePage() {
                 下方是即將輸出的財務證明版面。正式 PDF 會以 A4 固定比例輸出。
               </p>
 
-              <div className="mt-6 w-full max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-slate-100 p-3 sm:p-4">
-                <div
-                  style={{
-                    transform: "scale(0.55)",
-                    transformOrigin: "top left",
-                    width: "794px",
-                    height: "650px",
-                  }}
-                  className="sm:!h-[760px] sm:!scale-[0.65]"
-                >
+              <div className="mt-6 w-full max-w-full rounded-2xl border border-slate-200 bg-slate-100 p-3 sm:p-4">
+                <FitToWidth baseWidth={794}>
                   <FinancePdfTemplate
                     form={form}
                     amountChinese={amountChinese}
@@ -1980,7 +2048,7 @@ export default function FinancePage() {
                     presidentSignature={presidentSignature}
                     clubSeal={clubSeal}
                   />
-                </div>
+                </FitToWidth>
               </div>
 
               <div

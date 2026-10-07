@@ -1,0 +1,128 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /*
+      職位權限表（和網站後台 adminMenu.js 一致）
+        社長 president ：全部功能、職位管理、交接、社章、財務最終審核
+        副社長 vice     ：社員資料、活動公告、照片影片
+        財務長 finance  ：領款收據、活動公告、照片影片
+        活動長 activity ：活動公告、照片影片
+        公關 pr         ：活動公告、照片影片
+        歷任幹部 alumni ：只能上傳照片影片，並只能修改 / 刪除自己上傳的
+
+      幹部資料存在 users/{小寫Email}，用登入者的 Email 找出職位。
+    */
+
+    function signedIn() {
+      return request.auth != null && request.auth.token.email != null;
+    }
+
+    function myEmail() {
+      return request.auth.token.email.lower();
+    }
+
+    function myUserPath() {
+      return /databases/$(database)/documents/users/$(myEmail());
+    }
+
+    function hasRole(roles) {
+      return signedIn()
+        && exists(myUserPath())
+        && get(myUserPath()).data.get('role', '') in roles;
+    }
+
+    function isPresident() {
+      return hasRole(['president']);
+    }
+
+    function isOfficer() {
+      return hasRole(['president', 'vice', 'finance', 'activity', 'pr']);
+    }
+
+    function isFinanceManager() {
+      return hasRole(['president', 'finance']);
+    }
+
+    // 幹部名單：只有社長能管理；每個人都能讀自己的資料（登入時判斷職位用）
+    match /users/{userId} {
+      allow get: if signedIn() && (userId == myEmail() || isPresident());
+      allow list: if isPresident()
+        || (signedIn() && resource.data.email.lower() == myEmail());
+      allow create, update, delete: if isPresident();
+    }
+
+    // 活動公告：前台只看得到已公開的；所有現任幹部都能新增、修改、刪除
+    match /events/{eventId} {
+      allow read: if resource.data.published == true || isOfficer();
+      allow create, update, delete: if isOfficer();
+    }
+
+    // 照片影片：所有現任幹部都能管理；歷任幹部可以上傳，但只能改自己上傳的
+    match /media/{mediaId} {
+      allow read: if resource.data.visibleOnWebsite == true
+        || isOfficer()
+        || hasRole(['alumni']);
+
+      allow create: if isOfficer()
+        || (hasRole(['alumni'])
+            && request.resource.data.createdBy == request.auth.token.email);
+
+      allow update: if isOfficer()
+        || (hasRole(['alumni'])
+            && resource.data.createdBy == request.auth.token.email
+            && request.resource.data.createdBy == resource.data.createdBy);
+
+      allow delete: if isOfficer()
+        || (hasRole(['alumni'])
+            && resource.data.createdBy == request.auth.token.email);
+    }
+
+    // 社員資料：社長、副社長
+    match /members/{memberId} {
+      allow read, create, update, delete: if hasRole(['president', 'vice']);
+    }
+
+    // 社團設定（社章）：社長、財務長可讀（產生 PDF 需要），只有社長能修改
+    match /clubSettings/{settingId} {
+      allow read: if isFinanceManager();
+      allow create, update, delete: if isPresident();
+    }
+
+    /*
+      財務證明 / 領款收據
+      draft → pending_receiver_signature → pending_treasurer_signature
+      → pending_president_review → approved（或 returned / rejected）
+    */
+    match /financeRecords/{recordId} {
+      // 領款人用簽名連結開啟單一張單據，不需要登入
+      allow get: if true;
+      // 整份清單只有社長、財務長看得到
+      allow list: if isFinanceManager();
+
+      allow create, delete: if isFinanceManager();
+
+      allow update: if isFinanceManager()
+        || (
+          resource.data.status == "pending_receiver_signature"
+          && request.resource.data.receiverSignatureToken == resource.data.receiverSignatureToken
+          && request.resource.data.receiverSignature is string
+          && request.resource.data.hasReceiverSignature == true
+          && request.resource.data.status == "pending_treasurer_signature"
+        );
+    }
+
+    match /attendance/{attendanceId} {
+      allow read, create, update, delete: if isOfficer();
+    }
+
+    match /finance/{financeId} {
+      allow read, create, update, delete: if isFinanceManager();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

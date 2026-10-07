@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import AdminLayout from "../../components/AdminLayout";
@@ -25,6 +26,10 @@ const typeOptions = [
   { value: "poster", label: "海報" },
   { value: "document", label: "文件" },
 ];
+
+const typeLabelMap = Object.fromEntries(
+  typeOptions.map((item) => [item.value, item.label])
+);
 
 const categoryOptions = [
   "社課",
@@ -51,6 +56,57 @@ export default function MediaPage() {
   const [fetching, setFetching] = useState(true);
   const [deletingId, setDeletingId] = useState("");
   const [message, setMessage] = useState("");
+
+  // 歷任幹部只能修改、刪除自己上傳的媒體
+  const isAlumni = profile?.role === "alumni";
+  const canManage = (item) =>
+    !isAlumni || (item.createdBy && item.createdBy === currentUser?.email);
+
+  // 編輯模式
+  const [editingId, setEditingId] = useState("");
+  const formRef = useRef(null);
+
+  // 列表搜尋與篩選
+  const [keyword, setKeyword] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+
+  const filteredMedia = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return mediaList.filter((item) => {
+      if (typeFilter !== "all" && item.type !== typeFilter) return false;
+      if (statusFilter === "published" && !item.visibleOnWebsite) return false;
+      if (statusFilter === "draft" && item.visibleOnWebsite) return false;
+      if (!kw) return true;
+      return [item.title, item.category, item.description, item.createdByName]
+        .filter(Boolean)
+        .some((text) => String(text).toLowerCase().includes(kw));
+    });
+  }, [mediaList, keyword, typeFilter, statusFilter]);
+
+  const resetForm = () => {
+    setEditingId("");
+    setTitle("");
+    setType("image");
+    setCategory("社課");
+    setDriveUrl("");
+    setThumbnailUrl("");
+    setDescription("");
+    setVisibleOnWebsite(true);
+  };
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setTitle(item.title || "");
+    setType(item.type || "image");
+    setCategory(item.category || "社課");
+    setDriveUrl(item.driveUrl || "");
+    setThumbnailUrl(item.thumbnailUrl || "");
+    setDescription(item.description || "");
+    setVisibleOnWebsite(item.visibleOnWebsite !== false);
+    setMessage("");
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const autoFileId = useMemo(() => {
     return extractGoogleDriveFileId(driveUrl);
@@ -101,7 +157,7 @@ export default function MediaPage() {
         ? getGoogleDriveViewUrl(normalizedDriveUrl)
         : normalizedDriveUrl;
 
-      await addDoc(collection(db, "media"), {
+      const fields = {
         title: title.trim(),
         type,
         category,
@@ -110,25 +166,27 @@ export default function MediaPage() {
         description: description.trim(),
         visibleOnWebsite,
         googleDriveFileId: extractGoogleDriveFileId(normalizedDriveUrl),
-        createdBy: currentUser?.email || "",
-        createdByName: profile?.name || "",
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
 
-      setTitle("");
-      setType("image");
-      setCategory("社課");
-      setDriveUrl("");
-      setThumbnailUrl("");
-      setDescription("");
-      setVisibleOnWebsite(true);
+      if (editingId) {
+        await updateDoc(doc(db, "media", editingId), fields);
+        setMessage("媒體已更新");
+      } else {
+        await addDoc(collection(db, "media"), {
+          ...fields,
+          createdBy: currentUser?.email || "",
+          createdByName: profile?.name || "",
+          createdAt: serverTimestamp(),
+        });
+        setMessage("媒體新增成功");
+      }
 
-      setMessage("媒體新增成功");
+      resetForm();
       fetchMedia();
     } catch (err) {
       console.error("add media error:", err);
-      setMessage("新增失敗，請稍後再試");
+      setMessage(editingId ? "更新失敗，請稍後再試" : "新增失敗，請稍後再試");
     }
 
     setLoading(false);
@@ -143,6 +201,7 @@ export default function MediaPage() {
 
     try {
       await deleteDoc(doc(db, "media", id));
+      if (editingId === id) resetForm();
       setMessage("媒體刪除成功");
       fetchMedia();
     } catch (err) {
@@ -155,17 +214,20 @@ export default function MediaPage() {
 
   return (
     <AdminLayout>
-      <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-            MEDIA MANAGEMENT
+      <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+        <div ref={formRef} className="min-w-0 scroll-mt-20 rounded-2xl bg-white p-5 shadow-sm sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-2xl font-black text-slate-900">
+              {editingId ? "編輯媒體" : "新增照片 / 影片"}
+            </h1>
+            {editingId ? (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+                編輯中
+              </span>
+            ) : null}
           </div>
 
-          <h1 className="mt-3 text-3xl font-black text-slate-900">
-            照片 / 影片管理
-          </h1>
-
-          <p className="mt-4 leading-8 text-slate-600">
+          <p className="mt-2 text-sm leading-7 text-slate-500">
             貼上 Google Drive 分享連結後，系統會自動解析縮圖，供前台成果頁與影片頁顯示。
           </p>
 
@@ -301,24 +363,64 @@ export default function MediaPage() {
               </div>
             ) : null}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              {loading ? "儲存中..." : "儲存媒體"}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {loading ? "儲存中..." : editingId ? "儲存修改" : "新增媒體"}
+              </button>
+              {editingId ? (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-xl border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  取消編輯
+                </button>
+              ) : null}
+            </div>
           </form>
         </div>
 
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-            MEDIA LIST
+        <div className="min-w-0 rounded-2xl bg-white p-5 shadow-sm sm:p-8">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-2xl font-black text-slate-900">已建立媒體</h2>
+            <span className="text-sm text-slate-500">
+              {filteredMedia.length} / {mediaList.length} 筆
+            </span>
           </div>
 
-          <h2 className="mt-3 text-3xl font-black text-slate-900">
-            已建立媒體
-          </h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]">
+            <input
+              className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜尋標題、分類、建立者…"
+            />
+            <select
+              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none"
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+            >
+              <option value="all">全部類型</option>
+              {typeOptions.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <select
+              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">全部狀態</option>
+              <option value="published">已公開</option>
+              <option value="draft">未公開</option>
+            </select>
+          </div>
 
           {fetching ? (
             <div className="mt-6 text-slate-500">載入中...</div>
@@ -326,9 +428,13 @@ export default function MediaPage() {
             <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
               目前尚未建立任何媒體資料。
             </div>
+          ) : filteredMedia.length === 0 ? (
+            <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
+              沒有符合條件的媒體。
+            </div>
           ) : (
-            <div className="mt-6 space-y-4">
-              {mediaList.map((item) => {
+            <div className="mt-5 space-y-4">
+              {filteredMedia.map((item) => {
                 const itemPreview =
                   item.thumbnailUrl ||
                   (isGoogleDriveUrl(item.driveUrl)
@@ -338,7 +444,11 @@ export default function MediaPage() {
                 return (
                   <div
                     key={item.id}
-                    className="rounded-2xl border border-slate-200 p-5"
+                    className={`rounded-2xl border p-5 ${
+                      editingId === item.id
+                        ? "border-amber-700 ring-2 ring-amber-100"
+                        : "border-slate-200"
+                    }`}
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
@@ -346,11 +456,17 @@ export default function MediaPage() {
                           {item.title}
                         </div>
                         <div className="mt-2 text-sm text-slate-500">
-                          類型：{item.type} ｜ 分類：{item.category}
+                          類型：{typeLabelMap[item.type] || item.type} ｜ 分類：{item.category}
                         </div>
-                        <div className="mt-2 text-sm text-slate-500">
-                          狀態：{item.visibleOnWebsite ? "已公開" : "未公開"}
-                        </div>
+                        <span
+                          className={`mt-2 inline-flex rounded-full px-2.5 py-0.5 text-xs font-bold ${
+                            item.visibleOnWebsite
+                              ? "bg-green-100 text-green-700"
+                              : "bg-slate-100 text-slate-500"
+                          }`}
+                        >
+                          {item.visibleOnWebsite ? "已公開" : "未公開"}
+                        </span>
                         <div className="mt-2 text-sm text-slate-500">
                           建立者：{item.createdByName || item.createdBy}
                         </div>
@@ -375,23 +491,36 @@ export default function MediaPage() {
                       </p>
                     ) : null}
 
-                    <div className="mt-4 flex items-center gap-3">
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      {canManage(item) ? (
+                        <button
+                          type="button"
+                          onClick={() => startEdit(item)}
+                          className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white transition hover:bg-slate-800"
+                        >
+                          編輯
+                        </button>
+                      ) : null}
+
                       <a
                         href={item.driveUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-block text-sm font-semibold text-blue-600 hover:underline"
+                        className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
-                        開啟 Google Drive 連結
+                        開啟連結
                       </a>
 
-                      <button
-                        onClick={() => handleDelete(item.id, item.title)}
-                        disabled={deletingId === item.id}
-                        className="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
-                      >
-                        {deletingId === item.id ? "刪除中..." : "刪除"}
-                      </button>
+                      {canManage(item) ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id, item.title)}
+                          disabled={deletingId === item.id}
+                          className="ml-auto rounded-xl px-4 py-2 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                        >
+                          {deletingId === item.id ? "刪除中..." : "刪除"}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                 );

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   addDoc,
   collection,
@@ -8,6 +8,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../../lib/firebase";
 import AdminLayout from "../../components/AdminLayout";
@@ -57,6 +58,43 @@ export default function MembersPage() {
 
   const computedYears = useMemo(() => calculateYears(semesters), [semesters]);
 
+  // 編輯模式
+  const [editingId, setEditingId] = useState("");
+  const formRef = useRef(null);
+
+  // 列表搜尋與篩選
+  const [keyword, setKeyword] = useState("");
+  const [officerOnly, setOfficerOnly] = useState(false);
+
+  const filteredMembers = useMemo(() => {
+    const kw = keyword.trim().toLowerCase();
+    return memberList.filter((item) => {
+      if (officerOnly && !item.officerRole) return false;
+      if (!kw) return true;
+      return [item.memberCode, item.name, item.departmentGrade, item.officerRole]
+        .filter(Boolean)
+        .some((text) => String(text).toLowerCase().includes(kw));
+    });
+  }, [memberList, keyword, officerOnly]);
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setMemberCode(item.memberCode || "");
+    setName(item.name || "");
+    setDepartmentGrade(item.departmentGrade || "");
+    setSize(item.size || "-");
+    setOfficerRole(item.officerRole || "");
+    setSemesters(
+      semesterFields.reduce((acc, key) => {
+        const value = item.semesters?.[key];
+        acc[key] = value === 1 || value === "1" ? "1" : "-";
+        return acc;
+      }, {})
+    );
+    setMessage("");
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const fetchMembers = async () => {
     setFetching(true);
 
@@ -88,6 +126,7 @@ export default function MembersPage() {
   };
 
   const resetForm = () => {
+    setEditingId("");
     setMemberCode("");
     setName("");
     setDepartmentGrade("");
@@ -102,7 +141,7 @@ export default function MembersPage() {
     setMessage("");
 
     try {
-      await addDoc(collection(db, "members"), {
+      const fields = {
         memberCode: memberCode.trim(),
         name: name.trim(),
         departmentGrade: departmentGrade.trim(),
@@ -110,16 +149,24 @@ export default function MembersPage() {
         officerRole: officerRole.trim(),
         semesters,
         yearsOfService: calculateYears(semesters),
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
 
-      setMessage("社員年資資料新增成功");
+      if (editingId) {
+        await updateDoc(doc(db, "members", editingId), fields);
+        setMessage("社員資料已更新");
+      } else {
+        await addDoc(collection(db, "members"), {
+          ...fields,
+          createdAt: serverTimestamp(),
+        });
+        setMessage("社員年資資料新增成功");
+      }
       resetForm();
       fetchMembers();
     } catch (err) {
       console.error("add member error:", err);
-      setMessage("新增失敗，請稍後再試");
+      setMessage(editingId ? "更新失敗，請稍後再試" : "新增失敗，請稍後再試");
     }
 
     setLoading(false);
@@ -134,6 +181,7 @@ export default function MembersPage() {
 
     try {
       await deleteDoc(doc(db, "members", id));
+      if (editingId === id) resetForm();
       setMessage("社員資料刪除成功");
       fetchMembers();
     } catch (err) {
@@ -146,15 +194,18 @@ export default function MembersPage() {
 
   return (
     <AdminLayout>
-      <div className="grid gap-8 xl:grid-cols-[0.92fr_1.08fr]">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-            MEMBER SENIORITY MANAGEMENT
+      <div className="space-y-6">
+        <div ref={formRef} className="min-w-0 scroll-mt-20 rounded-2xl bg-white p-5 shadow-sm sm:p-8">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h1 className="text-2xl font-black text-slate-900">
+              {editingId ? "編輯社員資料" : "新增社員資料"}
+            </h1>
+            {editingId ? (
+              <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+                編輯中：{name || "未命名"}
+              </span>
+            ) : null}
           </div>
-
-          <h1 className="mt-3 text-3xl font-black text-slate-900">
-            社員年資表管理
-          </h1>
 
           <p className="mt-4 leading-8 text-slate-600">
             副社長可依照社員年資表格式，手動新增社員資料與各學期參與狀況，系統會自動計算年資。
@@ -171,7 +222,7 @@ export default function MembersPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-            <div className="grid gap-5 md:grid-cols-2">
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   編號
@@ -197,9 +248,7 @@ export default function MembersPage() {
                   required
                 />
               </div>
-            </div>
 
-            <div className="grid gap-5 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium text-slate-700">
                   系級
@@ -242,7 +291,7 @@ export default function MembersPage() {
                 各學期參與狀況
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
                 {semesterFields.map((field) => (
                   <div key={field}>
                     <label className="mb-2 block text-sm text-slate-600">
@@ -276,24 +325,51 @@ export default function MembersPage() {
               </div>
             ) : null}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              {loading ? "儲存中..." : "新增社員資料"}
-            </button>
+            <div className="flex flex-wrap gap-3">
+              <button
+                type="submit"
+                disabled={loading}
+                className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {loading ? "儲存中..." : editingId ? "儲存修改" : "新增社員資料"}
+              </button>
+              {editingId ? (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-xl border border-slate-300 px-6 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  取消編輯
+                </button>
+              ) : null}
+            </div>
           </form>
         </div>
 
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-            MEMBER SENIORITY TABLE
+        <div className="min-w-0 rounded-2xl bg-white p-5 shadow-sm sm:p-8">
+          <div className="flex items-baseline justify-between gap-3">
+            <h2 className="text-2xl font-black text-slate-900">社員年資列表</h2>
+            <span className="text-sm text-slate-500">
+              {filteredMembers.length} / {memberList.length} 人
+            </span>
           </div>
 
-          <h2 className="mt-3 text-3xl font-black text-slate-900">
-            社員年資列表
-          </h2>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <input
+              className="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜尋編號、姓名、系級、幹部…"
+            />
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                checked={officerOnly}
+                onChange={(e) => setOfficerOnly(e.target.checked)}
+              />
+              只看幹部
+            </label>
+          </div>
 
           {fetching ? (
             <div className="mt-6 text-slate-500">載入中...</div>
@@ -301,8 +377,12 @@ export default function MembersPage() {
             <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
               目前尚未建立任何社員年資資料。
             </div>
+          ) : filteredMembers.length === 0 ? (
+            <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
+              沒有符合條件的社員。
+            </div>
           ) : (
-            <div className="mt-6 overflow-x-auto rounded-2xl border border-slate-200">
+            <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
               <table className="min-w-[1200px] w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
@@ -329,8 +409,13 @@ export default function MembersPage() {
                 </thead>
 
                 <tbody>
-                  {memberList.map((item) => (
-                    <tr key={item.id} className="border-t border-slate-200">
+                  {filteredMembers.map((item) => (
+                    <tr
+                      key={item.id}
+                      className={`border-t border-slate-200 ${
+                        editingId === item.id ? "bg-amber-50" : ""
+                      }`}
+                    >
                       <td className="px-4 py-3">{item.memberCode || "-"}</td>
                       <td className="px-4 py-3 font-semibold text-slate-900">
                         {item.name || "-"}
@@ -352,11 +437,19 @@ export default function MembersPage() {
 
                       <td className="px-4 py-3">{item.officerRole || "-"}</td>
 
-                      <td className="px-4 py-3 text-center">
+                      <td className="whitespace-nowrap px-4 py-3 text-center">
                         <button
+                          type="button"
+                          onClick={() => startEdit(item)}
+                          className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-slate-800"
+                        >
+                          編輯
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleDelete(item.id, item.name)}
                           disabled={deletingId === item.id}
-                          className="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
+                          className="ml-2 rounded-lg px-3 py-1.5 text-sm font-semibold text-red-600 transition hover:bg-red-50"
                         >
                           {deletingId === item.id ? "刪除中..." : "刪除"}
                         </button>

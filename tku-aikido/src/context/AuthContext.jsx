@@ -28,89 +28,68 @@ export function AuthProvider({ children }) {
       return null;
     }
 
-    try {
-      /**
-       * 正確做法：
-       * 優先用 Firebase Auth UID 去讀 users/{uid}
-       * 這樣每個登入者都只會讀到自己的職位。
-       */
-      const uidRef = doc(db, "users", user.uid);
-      const uidSnap = await getDoc(uidRef);
+    const toProfile = (snapId, data) => ({
+      id: snapId,
+      uid: user.uid,
+      email: user.email || data.email || "",
+      name: data.name || user.displayName || "",
+      role: data.role || "",
+      ...data,
+    });
 
-      if (uidSnap.exists()) {
-        const data = uidSnap.data();
+    const emailKey = (user.email || "").toLowerCase();
 
-        const userProfile = {
-          id: uidSnap.id,
-          uid: user.uid,
-          email: user.email || data.email || "",
-          name: data.name || user.displayName || "",
-          role: data.role || "",
-          ...data,
-        };
+    /**
+     * 依序尋找這個登入者的職位資料，某一步失敗就繼續下一步：
+     * 1. users/{小寫Email}：目前的格式，Firestore 規則也是用這個判斷職位
+     * 2. users/{UID}：更早期的格式
+     * 3. 用 email 欄位查詢：舊資料（文件 ID 是亂數）
+     */
+    const lookups = [
+      async () => {
+        if (!emailKey) return null;
+        const snap = await getDoc(doc(db, "users", emailKey));
+        return snap.exists() ? toProfile(snap.id, snap.data()) : null;
+      },
+      async () => {
+        const snap = await getDoc(doc(db, "users", user.uid));
+        return snap.exists() ? toProfile(snap.id, snap.data()) : null;
+      },
+      async () => {
+        if (!user.email) return null;
+        const snap = await getDocs(
+          query(collection(db, "users"), where("email", "==", user.email))
+        );
+        return snap.empty ? null : toProfile(snap.docs[0].id, snap.docs[0].data());
+      },
+    ];
 
-        setProfile(userProfile);
-        return userProfile;
+    for (const lookup of lookups) {
+      try {
+        const found = await lookup();
+        if (found) {
+          setProfile(found);
+          return found;
+        }
+      } catch (error) {
+        // 新規則下讀不到舊格式的資料是正常的，繼續找下一個
+        console.warn("profile lookup skipped:", error?.code || error);
       }
-
-      /**
-       * 舊資料兼容：
-       * 如果你之前 users 文件 ID 不是 UID，
-       * 這裡會用 email 找一次。
-       * 找到後仍然只會取「目前登入者 email 對應的資料」。
-       */
-      const emailQuery = query(
-        collection(db, "users"),
-        where("email", "==", user.email || "")
-      );
-
-      const emailSnap = await getDocs(emailQuery);
-
-      if (!emailSnap.empty) {
-        const firstDoc = emailSnap.docs[0];
-        const data = firstDoc.data();
-
-        const userProfile = {
-          id: firstDoc.id,
-          uid: user.uid,
-          email: user.email || data.email || "",
-          name: data.name || user.displayName || "",
-          role: data.role || "",
-          ...data,
-        };
-
-        setProfile(userProfile);
-        return userProfile;
-      }
-
-      /**
-       * 沒有 Firestore profile 時：
-       * 代表這個帳號雖然登入了，但還沒被社長授權職位。
-       */
-      const emptyProfile = {
-        id: user.uid,
-        uid: user.uid,
-        email: user.email || "",
-        name: user.displayName || "",
-        role: "",
-      };
-
-      setProfile(emptyProfile);
-      return emptyProfile;
-    } catch (error) {
-      console.error("fetch user profile error:", error);
-
-      const fallbackProfile = {
-        id: user.uid,
-        uid: user.uid,
-        email: user.email || "",
-        name: user.displayName || "",
-        role: "",
-      };
-
-      setProfile(fallbackProfile);
-      return fallbackProfile;
     }
+
+    /**
+     * 都找不到：代表這個帳號雖然登入了，但還沒被社長授權職位。
+     */
+    const emptyProfile = {
+      id: emailKey || user.uid,
+      uid: user.uid,
+      email: user.email || "",
+      name: user.displayName || "",
+      role: "",
+    };
+
+    setProfile(emptyProfile);
+    return emptyProfile;
   };
 
   useEffect(() => {
