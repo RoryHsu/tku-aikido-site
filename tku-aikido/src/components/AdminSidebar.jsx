@@ -8,7 +8,9 @@ export default function AdminSidebar({ open = false, onClose }) {
   const { profile, logout } = useAuth();
 
   const role = profile?.role || "";
-  const roleLabel = roleLabelMap[role] || role || "未設定";
+  const roleLabel = profile?.isDeveloper
+    ? "開發者"
+    : roleLabelMap[role] || role || "未設定";
 
   const visibleMenuItems = adminMenuItems.filter((item) =>
     item.roles.includes(role)

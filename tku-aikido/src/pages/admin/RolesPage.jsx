@@ -165,6 +165,9 @@ export default function RolesPage() {
   const [retireOthers, setRetireOthers] = useState(false);
   const [handingOver, setHandingOver] = useState(false);
 
+  // 開發者帳號的 Email（不能被設定成幹部）
+  const [reservedEmails, setReservedEmails] = useState([]);
+
   // 開通帳號後要傳給對方的通知訊息
   const [inviteNotice, setInviteNotice] = useState(null);
 
@@ -213,6 +216,12 @@ export default function RolesPage() {
         await refreshProfile();
       }
 
+      // 開發者帳號不顯示在名單中，也不能被設定或交接
+      setReservedEmails(
+        list.filter((user) => user.role === "developer").map(emailKeyOf)
+      );
+      list = list.filter((user) => user.role !== "developer");
+
       list.sort((a, b) => timeOf(a.createdAt) - timeOf(b.createdAt));
       setUserList(list);
     } catch (err) {
@@ -258,6 +267,10 @@ export default function RolesPage() {
   const handleAdd = async (e) => {
     e.preventDefault();
     const trimmedEmail = email.trim().toLowerCase();
+    if (reservedEmails.includes(trimmedEmail)) {
+      notify("error", "這個 Email 是網站開發者帳號，不能設定成幹部。");
+      return;
+    }
     const existing = userList.find(
       (user) => (user.email || "").toLowerCase() === trimmedEmail
     );
@@ -398,6 +411,11 @@ export default function RolesPage() {
     const listed = isNewPerson
       ? userList.find((user) => emailKeyOf(user) === newKey)
       : successorOptions.find((user) => user.id === successorId);
+
+    if (isNewPerson && reservedEmails.includes(newKey)) {
+      notify("error", "這個 Email 是網站開發者帳號，不能接任社長。");
+      return;
+    }
 
     if (listed?.role === "president") {
       notify("error", "這個 Email 已經是社長了。");

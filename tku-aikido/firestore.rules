@@ -11,6 +11,8 @@ service cloud.firestore {
         活動長 activity ：活動公告、照片影片
         公關 pr         ：活動公告、照片影片
         歷任幹部 alumni ：只能上傳照片影片，並只能修改 / 刪除自己上傳的
+        開發者 developer：全部功能（網站維護用），社長不能修改或刪除這個帳號，
+                          只能在 Firebase 主控台手動建立
 
       幹部資料存在 users/{小寫Email}，用登入者的 Email 找出職位。
     */
@@ -27,10 +29,19 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(myEmail());
     }
 
+    function myRole() {
+      return get(myUserPath()).data.get('role', '');
+    }
+
+    // 開發者擁有所有職位的權限
     function hasRole(roles) {
       return signedIn()
         && exists(myUserPath())
-        && get(myUserPath()).data.get('role', '') in roles;
+        && (myRole() in roles || myRole() == 'developer');
+    }
+
+    function isDeveloper() {
+      return hasRole(['developer']);
     }
 
     function isPresident() {
@@ -46,11 +57,19 @@ service cloud.firestore {
     }
 
     // 幹部名單：只有社長能管理；每個人都能讀自己的資料（登入時判斷職位用）
+    // 開發者帳號只有開發者自己能改，社長不能修改、刪除，也不能把別人設成開發者
     match /users/{userId} {
       allow get: if signedIn() && (userId == myEmail() || isPresident());
       allow list: if isPresident()
         || (signedIn() && resource.data.email.lower() == myEmail());
-      allow create, update, delete: if isPresident();
+      allow create: if isDeveloper()
+        || (isPresident() && request.resource.data.get('role', '') != 'developer');
+      allow update: if isDeveloper()
+        || (isPresident()
+            && resource.data.get('role', '') != 'developer'
+            && request.resource.data.get('role', '') != 'developer');
+      allow delete: if isDeveloper()
+        || (isPresident() && resource.data.get('role', '') != 'developer');
     }
 
     // 活動公告：前台只看得到已公開的；所有現任幹部都能新增、修改、刪除

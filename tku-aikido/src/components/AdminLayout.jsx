@@ -10,7 +10,9 @@ export default function AdminLayout({ children }) {
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  const roleLabel = roleLabelMap[profile?.role] || profile?.role || "未設定";
+  const roleLabel = profile?.isDeveloper
+    ? "開發者"
+    : roleLabelMap[profile?.role] || profile?.role || "未設定";
   const currentPage =
     adminMenuItems.find((item) => pathname.startsWith(item.path))?.label ||
     "後台管理";

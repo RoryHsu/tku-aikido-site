@@ -28,6 +28,8 @@ export function AuthProvider({ children }) {
       return null;
     }
 
+    // 開發者帳號（role: "developer"）在後台擁有和社長一樣的全部功能，
+    // 但不會出現在幹部名單，也不受交接影響
     const toProfile = (snapId, data) => ({
       id: snapId,
       uid: user.uid,
@@ -35,6 +37,7 @@ export function AuthProvider({ children }) {
       name: data.name || user.displayName || "",
       role: data.role || "",
       ...data,
+      ...(data.role === "developer" ? { role: "president", isDeveloper: true } : {}),
     });
 
     const emailKey = (user.email || "").toLowerCase();
