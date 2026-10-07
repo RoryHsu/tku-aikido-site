@@ -13,33 +13,58 @@ import {
 import { db } from "../../lib/firebase";
 import AdminLayout from "../../components/AdminLayout";
 
-const semesterFields = [
-  "108-1",
-  "108-2",
-  "109-1",
-  "109-2",
-  "110-1",
-  "110-2",
-  "111-1",
-  "111-2",
-];
+/**
+ * 學期代號：「115-1」= 115 學年度上學期（8 月～隔年 1 月），「115-2」= 下學期（2 月～7 月）。
+ * 學期範圍依今天的日期自動計算，每到新學期就會自動多一欄，不需要改程式。
+ * 資料格式：semesters = { "108-1": "1", "115-1": "1" }，有參與的學期記 "1"。
+ */
+const DEFAULT_START_YEAR = 108;
+const RECENT_YEARS = 4;
 
-const emptySemesterData = semesterFields.reduce((acc, key) => {
-  acc[key] = "-";
-  return acc;
-}, {});
+function getCurrentSemester(date = new Date()) {
+  const rocYear = date.getFullYear() - 1911;
+  const month = date.getMonth() + 1;
+  if (month >= 8) return { year: rocYear, term: 1 };
+  if (month === 1) return { year: rocYear - 1, term: 1 };
+  return { year: rocYear - 1, term: 2 };
+}
+
+const CURRENT = getCurrentSemester();
+const CURRENT_KEY = `${CURRENT.year}-${CURRENT.term}`;
+
+const semesterKey = (year, term) => `${year}-${term}`;
+const isAttended = (value) => value === 1 || value === "1";
+const isFuture = (year, term) =>
+  year > CURRENT.year || (year === CURRENT.year && term > CURRENT.term);
+
+function parseSemesterKey(key) {
+  const match = /^(\d{2,3})-([12])$/.exec(key);
+  return match ? { year: Number(match[1]), term: Number(match[2]) } : null;
+}
+
+// 只留下有參與的學期，例如 { "108-1": "1", "109-2": "1" }
+function attendedOnly(semesters = {}) {
+  return Object.keys(semesters).reduce((acc, key) => {
+    if (parseSemesterKey(key) && isAttended(semesters[key])) acc[key] = "1";
+    return acc;
+  }, {});
+}
 
 function calculateYears(semesters = {}) {
-  let count = 0;
+  return Object.keys(attendedOnly(semesters)).length / 2;
+}
 
-  semesterFields.forEach((key) => {
-    const value = semesters[key];
-    if (value === 1 || value === "1") {
-      count += 1;
-    }
-  });
+function earliestYear(semesters = {}) {
+  return Object.keys(attendedOnly(semesters)).reduce((min, key) => {
+    const parsed = parseSemesterKey(key);
+    return parsed && parsed.year < min ? parsed.year : min;
+  }, Infinity);
+}
 
-  return count / 2;
+function yearRange(startYear, endYear) {
+  const years = [];
+  for (let year = startYear; year <= endYear; year += 1) years.push(year);
+  return years;
 }
 
 export default function MembersPage() {
@@ -48,7 +73,11 @@ export default function MembersPage() {
   const [departmentGrade, setDepartmentGrade] = useState("");
   const [size, setSize] = useState("-");
   const [officerRole, setOfficerRole] = useState("");
-  const [semesters, setSemesters] = useState(emptySemesterData);
+  const [semesters, setSemesters] = useState({});
+  // 表單往前多顯示幾個學年（輸入很久以前的社員時使用）
+  const [extraYears, setExtraYears] = useState(0);
+  // 列表顯示最近幾年，或全部學期
+  const [showAllYears, setShowAllYears] = useState(false);
 
   const [memberList, setMemberList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -57,6 +86,32 @@ export default function MembersPage() {
   const [message, setMessage] = useState("");
 
   const computedYears = useMemo(() => calculateYears(semesters), [semesters]);
+
+  // 學期範圍：從 108 學年（或資料中最早的學年）到目前學年
+  const dataStartYear = useMemo(
+    () =>
+      Math.min(
+        DEFAULT_START_YEAR,
+        ...memberList.map((item) => earliestYear(item.semesters))
+      ),
+    [memberList]
+  );
+  const formYears = yearRange(
+    Math.min(dataStartYear, earliestYear(semesters)) - extraYears,
+    CURRENT.year
+  ).reverse();
+  const listYears = yearRange(
+    showAllYears
+      ? dataStartYear
+      : Math.max(dataStartYear, CURRENT.year - RECENT_YEARS + 1),
+    CURRENT.year
+  );
+  const listSemesterKeys = listYears
+    .flatMap((year) => [semesterKey(year, 1), semesterKey(year, 2)])
+    .filter((key) => {
+      const { year, term } = parseSemesterKey(key);
+      return !isFuture(year, term);
+    });
 
   // 編輯模式
   const [editingId, setEditingId] = useState("");
@@ -84,13 +139,8 @@ export default function MembersPage() {
     setDepartmentGrade(item.departmentGrade || "");
     setSize(item.size || "-");
     setOfficerRole(item.officerRole || "");
-    setSemesters(
-      semesterFields.reduce((acc, key) => {
-        const value = item.semesters?.[key];
-        acc[key] = value === 1 || value === "1" ? "1" : "-";
-        return acc;
-      }, {})
-    );
+    setSemesters(attendedOnly(item.semesters));
+    setExtraYears(0);
     setMessage("");
     formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -118,11 +168,13 @@ export default function MembersPage() {
     fetchMembers();
   }, []);
 
-  const handleSemesterChange = (key, value) => {
-    setSemesters((prev) => ({
-      ...prev,
-      [key]: value,
-    }));
+  const toggleSemester = (key) => {
+    setSemesters((prev) => {
+      const next = { ...prev };
+      if (next[key]) delete next[key];
+      else next[key] = "1";
+      return next;
+    });
   };
 
   const resetForm = () => {
@@ -132,7 +184,8 @@ export default function MembersPage() {
     setDepartmentGrade("");
     setSize("-");
     setOfficerRole("");
-    setSemesters(emptySemesterData);
+    setSemesters({});
+    setExtraYears(0);
   };
 
   const handleSubmit = async (e) => {
@@ -147,7 +200,7 @@ export default function MembersPage() {
         departmentGrade: departmentGrade.trim(),
         size: size.trim(),
         officerRole: officerRole.trim(),
-        semesters,
+        semesters: attendedOnly(semesters),
         yearsOfService: calculateYears(semesters),
         updatedAt: serverTimestamp(),
       };
@@ -214,11 +267,12 @@ export default function MembersPage() {
           <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
             填寫方式：
             <br />
-            1. 各學期欄位填 <span className="font-semibold">1</span> 代表有參與
+            1. 點一下學期按鈕切換「有參與」（紅色）與「未參與」（灰色）
             <br />
-            2. 填 <span className="font-semibold">-</span> 代表未參與
+            2. 年資會自動依照「參與學期總數 ÷ 2」計算
             <br />
-            3. 年資會自動依照「參與學期總數 ÷ 2」計算
+            3. 學期會依日期自動更新，目前是 {CURRENT.year} 學年度
+            {CURRENT.term === 1 ? "上" : "下"}學期（{CURRENT_KEY}）
           </div>
 
           <form onSubmit={handleSubmit} className="mt-8 space-y-5">
@@ -287,26 +341,66 @@ export default function MembersPage() {
             </div>
 
             <div>
-              <div className="mb-3 text-sm font-medium text-slate-700">
-                各學期參與狀況
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-sm font-medium text-slate-700">
+                  各學期參與狀況
+                  <span className="ml-2 text-xs text-slate-500">
+                    已選 {Object.keys(semesters).length} 學期
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  {Object.keys(semesters).length ? (
+                    <button
+                      type="button"
+                      onClick={() => setSemesters({})}
+                      className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+                    >
+                      全部清除
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => setExtraYears((n) => n + 1)}
+                    className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    ＋ 更早的學年
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-8">
-                {semesterFields.map((field) => (
-                  <div key={field}>
-                    <label className="mb-2 block text-sm text-slate-600">
-                      {field}
-                    </label>
-                    <select
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
-                      value={semesters[field]}
-                      onChange={(e) =>
-                        handleSemesterChange(field, e.target.value)
-                      }
-                    >
-                      <option value="-">-</option>
-                      <option value="1">1</option>
-                    </select>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {formYears.map((year) => (
+                  <div
+                    key={year}
+                    className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2"
+                  >
+                    <span className="w-16 shrink-0 text-sm font-bold text-slate-700">
+                      {year} 學年
+                    </span>
+                    {[1, 2].map((term) => {
+                      const key = semesterKey(year, term);
+                      const on = Boolean(semesters[key]);
+                      const future = isFuture(year, term);
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          disabled={future && !on}
+                          onClick={() => toggleSemester(key)}
+                          title={future ? "這個學期還沒開始" : key}
+                          className={`flex-1 rounded-lg px-2 py-2 text-sm font-bold transition ${
+                            on
+                              ? "bg-amber-700 text-white"
+                              : future
+                                ? "cursor-not-allowed bg-slate-50 text-slate-300"
+                                : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                          } ${key === CURRENT_KEY ? "ring-2 ring-amber-700/30" : ""}`}
+                        >
+                          {term === 1 ? "上" : "下"}
+                          {on ? " ✓" : ""}
+                        </button>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -369,6 +463,14 @@ export default function MembersPage() {
               />
               只看幹部
             </label>
+            <select
+              value={showAllYears ? "all" : "recent"}
+              onChange={(e) => setShowAllYears(e.target.value === "all")}
+              className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none"
+            >
+              <option value="recent">顯示最近 {RECENT_YEARS} 學年</option>
+              <option value="all">顯示全部學期（{dataStartYear} 學年起）</option>
+            </select>
           </div>
 
           {fetching ? (
@@ -383,19 +485,21 @@ export default function MembersPage() {
             </div>
           ) : (
             <div className="mt-5 overflow-x-auto rounded-2xl border border-slate-200">
-              <table className="min-w-[1200px] w-full text-sm">
+              <table className="w-full min-w-[900px] text-sm">
                 <thead className="bg-slate-50 text-slate-600">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">編號</th>
                     <th className="px-4 py-3 text-left font-semibold">姓名</th>
                     <th className="px-4 py-3 text-left font-semibold">系級</th>
                     <th className="px-4 py-3 text-left font-semibold">尺寸</th>
-                    {semesterFields.map((field) => (
+                    {listSemesterKeys.map((key) => (
                       <th
-                        key={field}
-                        className="px-4 py-3 text-center font-semibold"
+                        key={key}
+                        className={`whitespace-nowrap px-2 py-3 text-center font-semibold ${
+                          key === CURRENT_KEY ? "text-amber-700" : ""
+                        }`}
                       >
-                        {field}
+                        {key}
                       </th>
                     ))}
                     <th className="px-4 py-3 text-center font-semibold">
@@ -423,16 +527,18 @@ export default function MembersPage() {
                       <td className="px-4 py-3">{item.departmentGrade || "-"}</td>
                       <td className="px-4 py-3">{item.size || "-"}</td>
 
-                      {semesterFields.map((field) => (
-                        <td key={field} className="px-4 py-3 text-center">
-                          {item.semesters?.[field] || "-"}
+                      {listSemesterKeys.map((key) => (
+                        <td key={key} className="px-2 py-3 text-center">
+                          {isAttended(item.semesters?.[key]) ? (
+                            <span className="font-bold text-amber-700">1</span>
+                          ) : (
+                            <span className="text-slate-300">-</span>
+                          )}
                         </td>
                       ))}
 
                       <td className="px-4 py-3 text-center font-bold text-slate-900">
-                        {typeof item.yearsOfService === "number"
-                          ? item.yearsOfService
-                          : calculateYears(item.semesters || {})}
+                        {calculateYears(item.semesters)}
                       </td>
 
                       <td className="px-4 py-3">{item.officerRole || "-"}</td>
