@@ -14,9 +14,13 @@ import { db } from "../../lib/firebase";
 import AdminLayout from "../../components/AdminLayout";
 import { useAuth } from "../../context/AuthContext";
 import { roleLabelMap } from "../../components/adminMenu";
+import { inviteAccount, inviteErrorMessage } from "../../lib/accountInvite";
 
 // 社長只能透過「交接」產生，所以一般指派的選項不含社長
 const assignableRoles = ["vice", "finance", "activity", "pr"];
+
+// 交接選單中「輸入新幹部」的選項值
+const NEW_SUCCESSOR = "__new__";
 
 // 幹部資料的文件 ID 統一用小寫 Email，Firestore 規則才找得到登入者的職位
 const emailKeyOf = (user) => (user.email || "").trim().toLowerCase();
@@ -52,6 +56,29 @@ function RoleSelect({ value, onChange, disabled }) {
   );
 }
 
+// 帳號開通狀態：有寄過設定密碼信就顯示日期
+function AccountStatus({ user }) {
+  const sentAt = formatDate(user.accountInvitedAt);
+  return (
+    <div className="mt-0.5 text-xs text-slate-400">
+      {sentAt ? `已寄設定密碼信 ・ ${sentAt}` : "尚未由後台開通帳號（已能登入的人不用開通）"}
+    </div>
+  );
+}
+
+function InviteButton({ user, disabled, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-lg border border-amber-700 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+    >
+      {user.accountInvitedAt ? "重寄設定密碼信" : "開通帳號"}
+    </button>
+  );
+}
+
 export default function RolesPage() {
   const { profile, refreshProfile } = useAuth();
 
@@ -66,10 +93,13 @@ export default function RolesPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("vice");
+  const [inviteOnAdd, setInviteOnAdd] = useState(true);
   const [adding, setAdding] = useState(false);
 
-  // 交接
+  // 交接：可以選名單中的人，也可以直接輸入新幹部
   const [successorId, setSuccessorId] = useState("");
+  const [newSuccessorName, setNewSuccessorName] = useState("");
+  const [newSuccessorEmail, setNewSuccessorEmail] = useState("");
   const [termLabel, setTermLabel] = useState("");
   const [retireOthers, setRetireOthers] = useState(false);
   const [handingOver, setHandingOver] = useState(false);
@@ -137,8 +167,9 @@ export default function RolesPage() {
     (user) => user.role && user.role !== "alumni"
   );
   const alumni = userList.filter((user) => user.role === "alumni");
-  const successorOptions = currentOfficers.filter(
-    (user) => user.role !== "president"
+  // 接任社長的人選：名單中除了現任社長以外的所有人（現任幹部、歷任幹部都可以）
+  const successorOptions = userList.filter(
+    (user) => user.role !== "president" && emailKeyOf(user)
   );
 
   const matchKeyword = (user) => {
@@ -185,16 +216,53 @@ export default function RolesPage() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
+
+      let inviteNote = "";
+      if (inviteOnAdd) {
+        try {
+          await inviteAccount(trimmedEmail);
+          await updateDoc(doc(db, "users", trimmedEmail), {
+            accountInvitedAt: serverTimestamp(),
+          });
+          inviteNote = `，已寄出設定密碼信到 ${trimmedEmail}`;
+        } catch (err) {
+          console.error("invite error:", err);
+          inviteNote = `，但開通帳號失敗：${inviteErrorMessage(err)}。可以稍後在名單中按「開通帳號」重試`;
+        }
+      }
+
       setName("");
       setEmail("");
       setRole("vice");
-      notify("success", "幹部新增成功");
+      notify(inviteNote.includes("失敗") ? "error" : "success", `幹部新增成功${inviteNote}`);
       fetchUsers();
     } catch (err) {
       console.error("add user role error:", err);
       notify("error", "新增失敗，請稍後再試");
     }
     setAdding(false);
+  };
+
+  // 開通帳號 / 重寄設定密碼信
+  const sendInvite = async (user) => {
+    setBusyId(user.id);
+    try {
+      const { created } = await inviteAccount(emailKeyOf(user));
+      await updateDoc(doc(db, "users", user.id), {
+        accountInvitedAt: serverTimestamp(),
+      });
+      notify(
+        "success",
+        created
+          ? `已幫「${user.name}」開通帳號，設定密碼信已寄到 ${user.email}`
+          : `「${user.name}」已經有帳號，已重新寄出設定密碼信到 ${user.email}`
+      );
+      fetchUsers();
+    } catch (err) {
+      console.error("invite error:", err);
+      notify("error", inviteErrorMessage(err));
+    }
+    setBusyId("");
   };
 
   const changeRole = async (user, nextRole) => {
@@ -256,11 +324,33 @@ export default function RolesPage() {
 
   const handleHandover = async (e) => {
     e.preventDefault();
-    const successor = successorOptions.find((user) => user.id === successorId);
-    if (!successor || !profile?.id) return;
+    if (!profile?.id) return;
+
+    // 決定接任者：名單中的人，或直接輸入的新幹部
+    const isNewPerson = successorId === NEW_SUCCESSOR;
+    const newKey = newSuccessorEmail.trim().toLowerCase();
+    const listed = isNewPerson
+      ? userList.find((user) => emailKeyOf(user) === newKey)
+      : successorOptions.find((user) => user.id === successorId);
+
+    if (listed?.role === "president") {
+      notify("error", "這個 Email 已經是社長了。");
+      return;
+    }
+
+    const successor = listed || {
+      id: newKey,
+      name: newSuccessorName.trim(),
+      email: newKey,
+      isNew: true,
+    };
+    if (!successor.id || !successor.name) return;
 
     const ok = window.confirm(
-      `確定把社長交接給「${successor.name}」嗎？\n\n` +
+      `確定把社長交接給「${successor.name}」（${successor.email}）嗎？\n\n` +
+        (successor.isNew
+          ? "・系統會先幫新社長開通帳號，並寄出設定密碼信。\n"
+          : "") +
         "・交接後你會變成「歷任幹部」，只能協助上傳照片與影片。\n" +
         (retireOthers ? "・其他現任幹部也會一起移到歷任幹部。\n" : "") +
         "・這個動作無法自行復原，只有新社長能再調整。"
@@ -268,6 +358,19 @@ export default function RolesPage() {
     if (!ok) return;
 
     setHandingOver(true);
+
+    // 新社長還沒有帳號時，先開通；開通失敗就不交接，避免沒人能登入社長帳號
+    if (successor.isNew) {
+      try {
+        await inviteAccount(successor.email);
+      } catch (err) {
+        console.error("invite successor error:", err);
+        notify("error", `無法幫新社長開通帳號：${inviteErrorMessage(err)}。交接沒有進行。`);
+        setHandingOver(false);
+        return;
+      }
+    }
+
     try {
       // 一次寫入：新社長上任、舊社長卸任，確保社團永遠只有一位社長
       const batch = writeBatch(db);
@@ -278,10 +381,21 @@ export default function RolesPage() {
         updatedAt: serverTimestamp(),
       };
 
-      batch.update(doc(db, "users", successor.id), {
-        role: "president",
-        updatedAt: serverTimestamp(),
-      });
+      if (successor.isNew) {
+        batch.set(doc(db, "users", successor.id), {
+          name: successor.name,
+          email: successor.email,
+          role: "president",
+          accountInvitedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        batch.update(doc(db, "users", successor.id), {
+          role: "president",
+          updatedAt: serverTimestamp(),
+        });
+      }
 
       currentOfficers.forEach((user) => {
         if (user.id === successor.id) return;
@@ -295,7 +409,12 @@ export default function RolesPage() {
       });
 
       await batch.commit();
-      notify("success", `交接完成，新任社長為「${successor.name}」`);
+      notify(
+        "success",
+        successor.isNew
+          ? `交接完成，新任社長為「${successor.name}」，設定密碼信已寄到 ${successor.email}`
+          : `交接完成，新任社長為「${successor.name}」`
+      );
       await refreshProfile();
     } catch (err) {
       console.error("handover error:", err);
@@ -339,8 +458,9 @@ export default function RolesPage() {
               <UserPlus size={20} className="text-amber-700" />
               <h2 className="text-lg font-black text-slate-900">新增幹部</h2>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
-              對方需要用這個 Email 註冊或登入，才會取得對應的後台權限。
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              勾選「開通帳號」會用這個 Email 建立登入帳號並寄出設定密碼信，對方設定好密碼後登入，就會看到自己職位的後台。
+              舊幹部繼續擔任不用重新開通，要換職位直接在下方名單修改即可。
             </p>
 
             <form onSubmit={handleAdd} className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -375,8 +495,16 @@ export default function RolesPage() {
                 disabled={adding}
                 className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
               >
-                {adding ? "新增中..." : "新增幹部"}
+                {adding ? "處理中..." : "新增幹部"}
               </button>
+              <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={inviteOnAdd}
+                  onChange={(e) => setInviteOnAdd(e.target.checked)}
+                />
+                同時開通帳號，寄設定密碼信給對方
+              </label>
             </form>
           </section>
 
@@ -386,8 +514,8 @@ export default function RolesPage() {
               <Crown size={20} className="text-amber-700" />
               <h2 className="text-lg font-black text-slate-900">社長交接</h2>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
-              一個社團只能有一位社長。交接後你會轉為歷任幹部。新社長要先在名單中，才能被選為接任者。
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              一個社團只能有一位社長，交接後你會轉為歷任幹部。接任者可以從名單中選，也可以直接輸入新幹部的 Email，系統會幫他開通帳號。
             </p>
 
             <form onSubmit={handleHandover} className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -398,9 +526,10 @@ export default function RolesPage() {
                 required
               >
                 <option value="">選擇接任社長…</option>
+                <option value={NEW_SUCCESSOR}>＋ 新幹部（不在名單中）</option>
                 {successorOptions.map((user) => (
                   <option key={user.id} value={user.id}>
-                    {user.name}（{roleLabelMap[user.role]}）
+                    {user.name}（{roleLabelMap[user.role] || "未設定"}）
                   </option>
                 ))}
               </select>
@@ -410,6 +539,25 @@ export default function RolesPage() {
                 onChange={(e) => setTermLabel(e.target.value)}
                 placeholder="屆別，例如：114 學年度"
               />
+              {successorId === NEW_SUCCESSOR ? (
+                <>
+                  <input
+                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+                    value={newSuccessorName}
+                    onChange={(e) => setNewSuccessorName(e.target.value)}
+                    placeholder="新社長姓名"
+                    required
+                  />
+                  <input
+                    type="email"
+                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+                    value={newSuccessorEmail}
+                    onChange={(e) => setNewSuccessorEmail(e.target.value)}
+                    placeholder="新社長 Email"
+                    required
+                  />
+                </>
+              ) : null}
               <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
                 <input
                   type="checkbox"
@@ -474,7 +622,16 @@ export default function RolesPage() {
                           ) : null}
                         </div>
                         <div className="truncate text-sm text-slate-500">{user.email}</div>
+                        <AccountStatus user={user} />
                       </div>
+
+                      {!isSelf ? (
+                        <InviteButton
+                          user={user}
+                          disabled={busyId === user.id}
+                          onClick={() => sendInvite(user)}
+                        />
+                      ) : null}
 
                       {locked ? (
                         <span className="rounded-full bg-amber-700 px-3 py-1 text-xs font-bold text-white">
@@ -532,8 +689,14 @@ export default function RolesPage() {
                           ? ` ・ ${formatDate(user.termEndedAt)} 卸任`
                           : ""}
                       </div>
+                      <AccountStatus user={user} />
                     </div>
 
+                    <InviteButton
+                      user={user}
+                      disabled={busyId === user.id}
+                      onClick={() => sendInvite(user)}
+                    />
                     <span className="text-sm text-slate-500">恢復為</span>
                     <RoleSelect
                       value=""
