@@ -1,30 +1,23 @@
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { Menu } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import AdminSidebar from "./AdminSidebar";
-
-const roleLabelMap = {
-  president: "社長",
-  vice: "副社長",
-  finance: "財務長",
-  activity: "活動長",
-  pr: "公關",
-};
+import { adminMenuItems, roleLabelMap } from "./adminMenu";
 
 export default function AdminLayout({ children }) {
-  const { profile, logout } = useAuth();
+  const { profile } = useAuth();
+  const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const roleLabel = roleLabelMap[profile?.role] || profile?.role || "未設定";
-
-  const handleLogout = async () => {
-    await logout();
-  };
+  const currentPage =
+    adminMenuItems.find((item) => pathname.startsWith(item.path))?.label ||
+    "後台管理";
 
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* Mobile / Tablet overlay */}
+      {/* 手機 / 平板：側邊欄打開時的遮罩 */}
       {sidebarOpen ? (
         <div
           className="fixed inset-0 z-40 bg-black/40 lg:hidden"
@@ -32,69 +25,43 @@ export default function AdminLayout({ children }) {
         />
       ) : null}
 
-      {/* Sidebar */}
-      <AdminSidebar
-        open={sidebarOpen}
-        onClose={() => setSidebarOpen(false)}
-      />
+      <AdminSidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
 
-      {/* Main area */}
-      <div className="min-h-screen lg:pl-72">
-        {/* Top bar */}
+      <div className="min-h-screen lg:pl-64">
+        {/* 頂部欄：顯示目前頁面名稱；回到主頁、登出統一放在側邊欄 */}
         <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="flex min-h-20 items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-10">
+          <div className="flex h-16 items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 onClick={() => setSidebarOpen(true)}
-                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-sm lg:hidden"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-900 lg:hidden"
                 aria-label="開啟後台選單"
               >
-                <Menu size={22} />
+                <Menu size={20} />
               </button>
 
-              <div className="min-w-0">
-                <div className="text-xs font-bold tracking-[0.25em] text-slate-400 sm:text-sm">
-                  TKU AIKIDO ADMIN
-                </div>
-
-                <h1 className="mt-1 truncate text-2xl font-black text-slate-900 sm:text-3xl">
-                  後台管理系統
-                </h1>
+              <div className="truncate text-lg font-black text-slate-900 sm:text-xl">
+                {currentPage}
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
-              <div className="hidden text-right sm:block">
-                <div className="text-sm font-bold text-slate-900">
-                  {profile?.name || "幹部"}
-                </div>
-                <div className="max-w-[220px] truncate text-xs text-slate-500">
-                  {roleLabel} / {profile?.email || ""}
-                </div>
-              </div>
-
-              <Link
-                to="/"
-                className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 sm:px-4"
-              >
-                回到主頁
-              </Link>
-
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white hover:bg-slate-800 sm:px-4"
-              >
-                登出
-              </button>
+            <div className="flex min-w-0 items-center gap-2 rounded-full bg-slate-100 py-1 pl-1 pr-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-700 text-sm font-black text-white">
+                {(profile?.name || "幹")[0]}
+              </span>
+              <span className="hidden truncate text-sm font-bold text-slate-700 sm:inline">
+                {profile?.name || "幹部"}
+              </span>
+              <span className="shrink-0 text-xs font-bold text-amber-700">
+                {roleLabel}
+              </span>
             </div>
           </div>
         </header>
 
-        {/* Content */}
-        <main className="w-full px-4 py-6 sm:px-6 sm:py-8 lg:px-10 xl:px-14">
-          <div className="mx-auto w-full max-w-[1440px]">{children}</div>
+        <main className="w-full px-4 py-5 sm:px-6 sm:py-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[1400px]">{children}</div>
         </main>
       </div>
     </div>

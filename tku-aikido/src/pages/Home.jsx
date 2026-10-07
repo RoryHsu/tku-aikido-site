@@ -1,12 +1,21 @@
+import { useState } from "react";
 import { CalendarDays, ShieldCheck, Smile } from "lucide-react";
+import IntroOverlay from "../components/IntroOverlay";
+import HeroSlider from "../components/HeroSlider";
+import LatestEvents from "../components/LatestEvents";
 
 import photo1 from "../assets/home/photo1.jpg";
 import photo2 from "../assets/home/photo2.jpg";
 import video1 from "../assets/home/video1.mp4";
 
 export default function Home() {
+  const [introDone, setIntroDone] = useState(false);
+
   return (
     <>
+      <IntroOverlay onFinish={() => setIntroDone(true)} />
+      <HeroSlider ready={introDone} />
+
       <section className="border-b border-slate-200 bg-slate-50">
         <div className="mx-auto grid max-w-7xl gap-10 px-4 py-16 sm:px-6 lg:grid-cols-[1fr_0.9fr] lg:px-8 lg:py-24">
           <div className="flex flex-col justify-center">
@@ -93,6 +102,8 @@ export default function Home() {
         </div>
       </section>
 
+      <LatestEvents />
+
       <section id="about" className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
           <div className="max-w-3xl">
@@ -165,7 +176,7 @@ export default function Home() {
                 <br />
                 Facebook：淡江大學合氣道社
                 <br />
-                Email：30190@tkueca.org
+                Email：3019@tkueca.org
               </div>
             </div>
           </div>

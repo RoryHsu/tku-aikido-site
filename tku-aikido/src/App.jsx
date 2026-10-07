@@ -26,6 +26,20 @@ import SealPage from "./pages/admin/SealPage";
 
 import ProtectedRoute from "./routes/ProtectedRoute";
 import RoleRoute from "./routes/RoleRoute";
+import { rolesFor } from "./components/adminMenu";
+
+// 前台共用版面：每個前台頁面都有導覽列與頁尾
+function PublicLayout() {
+  return (
+    <div className="flex min-h-screen flex-col bg-white text-slate-950">
+      <Navbar />
+      <main className="flex-1">
+        <Outlet />
+      </main>
+      <Footer />
+    </div>
+  );
+}
 
 // 前台共用版面：每個前台頁面都有導覽列與頁尾
 function PublicLayout() {
@@ -64,22 +78,12 @@ export default function App() {
         <Route path="/admin/login" element={<AdminLogin />} />
         <Route path="/admin/forgot-password" element={<ForgotPassword />} />
 
-        {/* 後台首頁：所有幹部可進入 */}
+        {/* 後台首頁：登入後都能進入；沒有職位的帳號會看到「尚未設定職位權限」 */}
         <Route
           path="/admin/dashboard"
           element={
             <ProtectedRoute>
-              <RoleRoute
-                allowRoles={[
-                  "president",
-                  "vice",
-                  "finance",
-                  "activity",
-                  "pr",
-                ]}
-              >
-                <Dashboard />
-              </RoleRoute>
+              <Dashboard />
             </ProtectedRoute>
           }
         />
@@ -89,7 +93,7 @@ export default function App() {
           path="/admin/roles"
           element={
             <ProtectedRoute>
-              <RoleRoute allowRoles={["president"]}>
+              <RoleRoute allowRoles={rolesFor("/admin/roles")}>
                 <RolesPage />
               </RoleRoute>
             </ProtectedRoute>
@@ -101,26 +105,20 @@ export default function App() {
           path="/admin/members"
           element={
             <ProtectedRoute>
-              <RoleRoute allowRoles={["president", "vice"]}>
+              <RoleRoute allowRoles={rolesFor("/admin/members")}>
                 <MembersPage />
               </RoleRoute>
             </ProtectedRoute>
           }
         />
 
-        {/* 活動公告管理：所有幹部可協助 */}
+        {/* 活動公告管理：所有現任幹部 */}
         <Route
           path="/admin/events"
           element={
             <ProtectedRoute>
               <RoleRoute
-                allowRoles={[
-                  "president",
-                  "vice",
-                  "finance",
-                  "activity",
-                  "pr",
-                ]}
+                allowRoles={rolesFor("/admin/events")}
               >
                 <EventsPage />
               </RoleRoute>
@@ -128,19 +126,13 @@ export default function App() {
           }
         />
 
-        {/* 照片 / 影片管理：所有幹部可協助 */}
+        {/* 照片 / 影片管理：所有現任幹部與歷任幹部 */}
         <Route
           path="/admin/media"
           element={
             <ProtectedRoute>
               <RoleRoute
-                allowRoles={[
-                  "president",
-                  "vice",
-                  "finance",
-                  "activity",
-                  "pr",
-                ]}
+                allowRoles={rolesFor("/admin/media")}
               >
                 <MediaPage />
               </RoleRoute>
@@ -153,7 +145,7 @@ export default function App() {
           path="/admin/finance"
           element={
             <ProtectedRoute>
-              <RoleRoute allowRoles={["president", "finance"]}>
+              <RoleRoute allowRoles={rolesFor("/admin/finance")}>
                 <FinancePage />
               </RoleRoute>
             </ProtectedRoute>
@@ -165,7 +157,7 @@ export default function App() {
           path="/admin/seal"
           element={
             <ProtectedRoute>
-              <RoleRoute allowRoles={["president"]}>
+              <RoleRoute allowRoles={rolesFor("/admin/seal")}>
                 <SealPage />
               </RoleRoute>
             </ProtectedRoute>

@@ -1,60 +1,224 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  addDoc,
   collection,
   deleteDoc,
   doc,
   getDocs,
-  orderBy,
-  query,
   serverTimestamp,
+  setDoc,
+  updateDoc,
+  writeBatch,
 } from "firebase/firestore";
+import { Crown, History, UserPlus, Users } from "lucide-react";
 import { db } from "../../lib/firebase";
 import AdminLayout from "../../components/AdminLayout";
+import { useAuth } from "../../context/AuthContext";
+import { roleLabelMap } from "../../components/adminMenu";
+import { inviteAccount, inviteErrorMessage } from "../../lib/accountInvite";
 
-const roleOptions = [
-  { value: "president", label: "社長" },
-  { value: "vice", label: "副社長" },
-  { value: "finance", label: "財務長" },
-  { value: "activity", label: "活動長" },
-  { value: "pr", label: "公關" },
-];
+// 社長只能透過「交接」產生，所以一般指派的選項不含社長
+const assignableRoles = ["vice", "finance", "activity", "pr"];
 
-const roleLabelMap = {
-  president: "社長",
-  vice: "副社長",
-  finance: "財務長",
-  activity: "活動長",
-  pr: "公關",
-};
+// 交接選單中「輸入新幹部」的選項值
+const NEW_SUCCESSOR = "__new__";
+
+// 幹部資料的文件 ID 統一用小寫 Email，Firestore 規則才找得到登入者的職位
+const emailKeyOf = (user) => (user.email || "").trim().toLowerCase();
+
+const timeOf = (value) =>
+  value?.toMillis ? value.toMillis() : value?.seconds ? value.seconds * 1000 : 0;
+
+function formatDate(value) {
+  const date = value?.toDate ? value.toDate() : value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("zh-TW");
+}
+
+function RoleSelect({ value, onChange, disabled }) {
+  return (
+    <select
+      className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm outline-none disabled:opacity-60"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={disabled}
+    >
+      {value === "" ? (
+        <option value="" disabled>
+          選擇職位…
+        </option>
+      ) : null}
+      {assignableRoles.map((role) => (
+        <option key={role} value={role}>
+          {roleLabelMap[role]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+// 帳號開通狀態：有寄過重設密碼信就顯示日期
+function AccountStatus({ user }) {
+  const sentAt = formatDate(user.accountInvitedAt);
+  return (
+    <div className="mt-0.5 text-xs text-slate-400">
+      {sentAt ? `已寄重設密碼信 ・ ${sentAt}` : "尚未由後台開通帳號（已能登入的人不用開通）"}
+    </div>
+  );
+}
+
+function InviteButton({ user, disabled, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-lg border border-amber-700 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
+    >
+      {user.accountInvitedAt ? "重寄密碼信" : "開通帳號"}
+    </button>
+  );
+}
+
+// Firebase 的信件內容不能修改，所以另外產生一段訊息，讓社長用 LINE 等方式傳給對方
+function buildInviteMessage({ name, email, role }) {
+  const loginUrl = `${window.location.origin}/admin/login`;
+  return [
+    `${name ? `${name} 你好，` : ""}我已經幫你開通淡江合氣道社後台帳號（你的職位：${roleLabelMap[role] || "幹部"}）。`,
+    "",
+    `1. 請到信箱 ${email} 找一封主旨「重設淡江合氣道社的密碼」的信（可能在垃圾郵件或促銷內容裡）。`,
+    "2. 點信裡的連結，直接輸入你想要的新密碼即可，不需要舊密碼。",
+    `3. 設定好後到 ${loginUrl} 用這個 Email 和新密碼登入。`,
+    "",
+    "連結有使用期限，過期的話在登入頁按「忘記密碼」重新寄一次就好。",
+  ].join("\n");
+}
+
+function InviteNotice({ notice, onClose, closeLabel }) {
+  const [copied, setCopied] = useState(false);
+  const text = buildInviteMessage(notice);
+
+  const copy = async (e) => {
+    const area = e.currentTarget.closest("section")?.querySelector("textarea");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      // 瀏覽器不允許自動複製時，選取文字讓使用者自己按 Ctrl+C
+      area?.select();
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border-2 border-amber-100 bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-base font-black text-slate-900">傳給 {notice.name || notice.email} 的通知訊息</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Firebase 寄出的信內容是固定的，建議把下面這段訊息用 LINE 等方式傳給對方，對方比較不會看不懂。
+      </p>
+      <textarea
+        readOnly
+        rows={8}
+        value={text}
+        className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 outline-none"
+      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={copy}
+          className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800"
+        >
+          {copied ? "已複製 ✓" : "複製通知訊息"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          {closeLabel || "關閉"}
+        </button>
+      </div>
+    </section>
+  );
+}
 
 export default function RolesPage() {
+  const { profile, refreshProfile } = useAuth();
+
+  const [userList, setUserList] = useState([]);
+  const [fetching, setFetching] = useState(true);
+  const [busyId, setBusyId] = useState("");
+  const [message, setMessage] = useState({ type: "", text: "" });
+  const [tab, setTab] = useState("current");
+  const [keyword, setKeyword] = useState("");
+
+  // 新增幹部
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState("vice");
+  const [inviteOnAdd, setInviteOnAdd] = useState(true);
+  const [adding, setAdding] = useState(false);
 
-  const [userList, setUserList] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [fetching, setFetching] = useState(true);
-  const [deletingId, setDeletingId] = useState("");
-  const [message, setMessage] = useState("");
+  // 交接：可以選名單中的人，也可以直接輸入新幹部
+  const [successorId, setSuccessorId] = useState("");
+  const [newSuccessorName, setNewSuccessorName] = useState("");
+  const [newSuccessorEmail, setNewSuccessorEmail] = useState("");
+  const [termLabel, setTermLabel] = useState("");
+  const [retireOthers, setRetireOthers] = useState(false);
+  const [handingOver, setHandingOver] = useState(false);
+
+  // 開通帳號後要傳給對方的通知訊息
+  const [inviteNotice, setInviteNotice] = useState(null);
+
+  const notify = (type, text) => setMessage({ type, text });
+
+  /**
+   * 把舊格式（文件 ID 是亂數）的幹部資料，轉成以 Email 當文件 ID 的新格式。
+   * 只有社長打開這一頁時會執行；同一個 Email 已經有新格式資料時，直接刪掉舊的重複資料。
+   */
+  const migrateLegacyUsers = async (list) => {
+    const legacy = list.filter(
+      (user) => emailKeyOf(user) && user.id !== emailKeyOf(user)
+    );
+    if (legacy.length === 0) return false;
+
+    const batch = writeBatch(db);
+    const existingIds = new Set(list.map((user) => user.id));
+
+    legacy.forEach((user) => {
+      const key = emailKeyOf(user);
+      if (!existingIds.has(key)) {
+        const { id: _oldId, ...data } = user;
+        batch.set(doc(db, "users", key), { ...data, email: key });
+        existingIds.add(key);
+      }
+      batch.delete(doc(db, "users", user.id));
+    });
+
+    await batch.commit();
+    notify("success", `已將 ${legacy.length} 筆幹部資料轉換為新格式。`);
+    return true;
+  };
 
   const fetchUsers = async () => {
     setFetching(true);
-
     try {
-      const q = query(collection(db, "users"), orderBy("createdAt", "asc"));
-      const snapshot = await getDocs(q);
-      const data = snapshot.docs.map((docItem) => ({
+      const snapshot = await getDocs(collection(db, "users"));
+      let list = snapshot.docs.map((docItem) => ({
         id: docItem.id,
         ...docItem.data(),
       }));
-      setUserList(data);
+
+      if (profile?.role === "president" && (await migrateLegacyUsers(list))) {
+        const again = await getDocs(collection(db, "users"));
+        list = again.docs.map((docItem) => ({ id: docItem.id, ...docItem.data() }));
+        await refreshProfile();
+      }
+
+      list.sort((a, b) => timeOf(a.createdAt) - timeOf(b.createdAt));
+      setUserList(list);
     } catch (err) {
       console.error("fetch users error:", err);
-      setMessage("讀取幹部資料失敗");
+      notify("error", "讀取幹部資料失敗");
     }
-
     setFetching(false);
   };
 
@@ -62,197 +226,587 @@ export default function RolesPage() {
     fetchUsers();
   }, []);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLoading(true);
-    setMessage("");
+  const presidents = userList.filter((user) => user.role === "president");
+  const currentOfficers = userList.filter(
+    (user) => user.role && user.role !== "alumni"
+  );
+  const alumni = userList.filter((user) => user.role === "alumni");
+  // 接任社長的人選：名單中除了現任社長以外的所有人（現任幹部、歷任幹部都可以）
+  const successorOptions = userList.filter(
+    (user) => user.role !== "president" && emailKeyOf(user)
+  );
 
+  const matchKeyword = (user) => {
+    const kw = keyword.trim().toLowerCase();
+    if (!kw) return true;
+    return [user.name, user.email, user.termLabel]
+      .filter(Boolean)
+      .some((text) => String(text).toLowerCase().includes(kw));
+  };
+
+  const visibleCurrent = useMemo(
+    () => currentOfficers.filter(matchKeyword),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userList, keyword]
+  );
+  const visibleAlumni = useMemo(
+    () => alumni.filter(matchKeyword),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userList, keyword]
+  );
+
+  const handleAdd = async (e) => {
+    e.preventDefault();
+    const trimmedEmail = email.trim().toLowerCase();
+    const existing = userList.find(
+      (user) => (user.email || "").toLowerCase() === trimmedEmail
+    );
+    if (existing) {
+      notify(
+        "error",
+        `這個 Email 已經在名單中（${existing.name || trimmedEmail}，${
+          roleLabelMap[existing.role] || "未設定"
+        }），請直接在列表中調整職位。`
+      );
+      return;
+    }
+
+    setAdding(true);
     try {
-      await addDoc(collection(db, "users"), {
+      await setDoc(doc(db, "users", trimmedEmail), {
         name: name.trim(),
-        email: email.trim(),
+        email: trimmedEmail,
         role,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
 
+      let inviteNote = "";
+      if (inviteOnAdd) {
+        try {
+          await inviteAccount(trimmedEmail);
+          await updateDoc(doc(db, "users", trimmedEmail), {
+            accountInvitedAt: serverTimestamp(),
+          });
+          inviteNote = `，已寄出重設密碼信到 ${trimmedEmail}`;
+          setInviteNotice({ name: name.trim(), email: trimmedEmail, role });
+        } catch (err) {
+          console.error("invite error:", err);
+          inviteNote = `，但開通帳號失敗：${inviteErrorMessage(err)}。可以稍後在名單中按「開通帳號」重試`;
+        }
+      }
+
       setName("");
       setEmail("");
       setRole("vice");
-      setMessage("幹部資料新增成功");
+      notify(inviteNote.includes("失敗") ? "error" : "success", `幹部新增成功${inviteNote}`);
       fetchUsers();
     } catch (err) {
       console.error("add user role error:", err);
-      setMessage("新增失敗，請稍後再試");
+      notify("error", "新增失敗，請稍後再試");
     }
-
-    setLoading(false);
+    setAdding(false);
   };
 
-  const handleDelete = async (id, targetName) => {
-    const confirmed = window.confirm(`確定要刪除「${targetName}」這筆幹部資料嗎？`);
-    if (!confirmed) return;
-
-    setDeletingId(id);
-    setMessage("");
-
+  // 開通帳號 / 重寄重設密碼信
+  const sendInvite = async (user) => {
+    setBusyId(user.id);
     try {
-      await deleteDoc(doc(db, "users", id));
-      setMessage("幹部資料刪除成功");
+      const { created } = await inviteAccount(emailKeyOf(user));
+      await updateDoc(doc(db, "users", user.id), {
+        accountInvitedAt: serverTimestamp(),
+      });
+      setInviteNotice({ name: user.name, email: emailKeyOf(user), role: user.role });
+      notify(
+        "success",
+        created
+          ? `已幫「${user.name}」開通帳號，重設密碼信已寄到 ${user.email}`
+          : `「${user.name}」已經有帳號，已重新寄出重設密碼信到 ${user.email}`
+      );
       fetchUsers();
     } catch (err) {
-      console.error("delete user role error:", err);
-      setMessage("刪除失敗，請稍後再試");
+      console.error("invite error:", err);
+      notify("error", inviteErrorMessage(err));
+    }
+    setBusyId("");
+  };
+
+  const changeRole = async (user, nextRole) => {
+    setBusyId(user.id);
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        role: nextRole,
+        updatedAt: serverTimestamp(),
+      });
+      notify("success", `已將「${user.name}」改為${roleLabelMap[nextRole]}`);
+      fetchUsers();
+    } catch (err) {
+      console.error("change role error:", err);
+      notify("error", "更新職位失敗，請稍後再試");
+    }
+    setBusyId("");
+  };
+
+  const retire = async (user) => {
+    const ok = window.confirm(
+      `確定讓「${user.name}」卸任嗎？\n卸任後會移到「歷任幹部」，只能協助上傳照片與影片。`
+    );
+    if (!ok) return;
+
+    setBusyId(user.id);
+    try {
+      await updateDoc(doc(db, "users", user.id), {
+        role: "alumni",
+        formerRole: user.role,
+        termEndedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      notify("success", `「${user.name}」已移到歷任幹部`);
+      fetchUsers();
+    } catch (err) {
+      console.error("retire error:", err);
+      notify("error", "卸任失敗，請稍後再試");
+    }
+    setBusyId("");
+  };
+
+  const removeAccess = async (user) => {
+    const ok = window.confirm(
+      `確定移除「${user.name}」的後台權限嗎？\n移除後這個帳號將無法再進入後台。`
+    );
+    if (!ok) return;
+
+    setBusyId(user.id);
+    try {
+      await deleteDoc(doc(db, "users", user.id));
+      notify("success", `已移除「${user.name}」的後台權限`);
+      fetchUsers();
+    } catch (err) {
+      console.error("remove access error:", err);
+      notify("error", "移除失敗，請稍後再試");
+    }
+    setBusyId("");
+  };
+
+  const handleHandover = async (e) => {
+    e.preventDefault();
+    if (!profile?.id) return;
+
+    // 決定接任者：名單中的人，或直接輸入的新幹部
+    const isNewPerson = successorId === NEW_SUCCESSOR;
+    const newKey = newSuccessorEmail.trim().toLowerCase();
+    const listed = isNewPerson
+      ? userList.find((user) => emailKeyOf(user) === newKey)
+      : successorOptions.find((user) => user.id === successorId);
+
+    if (listed?.role === "president") {
+      notify("error", "這個 Email 已經是社長了。");
+      return;
     }
 
-    setDeletingId("");
+    const successor = listed || {
+      id: newKey,
+      name: newSuccessorName.trim(),
+      email: newKey,
+      isNew: true,
+    };
+    if (!successor.id || !successor.name) return;
+
+    const ok = window.confirm(
+      `確定把社長交接給「${successor.name}」（${successor.email}）嗎？\n\n` +
+        (successor.isNew
+          ? "・系統會先幫新社長開通帳號，並寄出重設密碼信。\n"
+          : "") +
+        "・交接後你會變成「歷任幹部」，只能協助上傳照片與影片。\n" +
+        (retireOthers ? "・其他現任幹部也會一起移到歷任幹部。\n" : "") +
+        "・這個動作無法自行復原，只有新社長能再調整。"
+    );
+    if (!ok) return;
+
+    setHandingOver(true);
+
+    // 新社長還沒有帳號時，先開通；開通失敗就不交接，避免沒人能登入社長帳號
+    if (successor.isNew) {
+      try {
+        await inviteAccount(successor.email);
+      } catch (err) {
+        console.error("invite successor error:", err);
+        notify("error", `無法幫新社長開通帳號：${inviteErrorMessage(err)}。交接沒有進行。`);
+        setHandingOver(false);
+        return;
+      }
+    }
+
+    try {
+      // 一次寫入：新社長上任、舊社長卸任，確保社團永遠只有一位社長
+      const batch = writeBatch(db);
+      const endFields = {
+        role: "alumni",
+        termEndedAt: serverTimestamp(),
+        termLabel: termLabel.trim(),
+        updatedAt: serverTimestamp(),
+      };
+
+      if (successor.isNew) {
+        batch.set(doc(db, "users", successor.id), {
+          name: successor.name,
+          email: successor.email,
+          role: "president",
+          accountInvitedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        batch.update(doc(db, "users", successor.id), {
+          role: "president",
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      currentOfficers.forEach((user) => {
+        if (user.id === successor.id) return;
+        const isOldPresident = user.role === "president";
+        if (isOldPresident || retireOthers) {
+          batch.update(doc(db, "users", user.id), {
+            ...endFields,
+            formerRole: user.role,
+          });
+        }
+      });
+
+      await batch.commit();
+      notify(
+        "success",
+        successor.isNew
+          ? `交接完成，新任社長為「${successor.name}」，重設密碼信已寄到 ${successor.email}`
+          : `交接完成，新任社長為「${successor.name}」`
+      );
+
+      if (successor.isNew) {
+        // 先留在這頁讓舊社長複製通知訊息，按「完成」後才切換成歷任幹部的畫面
+        setInviteNotice({
+          name: successor.name,
+          email: successor.email,
+          role: "president",
+          afterHandover: true,
+        });
+      } else {
+        await refreshProfile();
+      }
+    } catch (err) {
+      console.error("handover error:", err);
+      notify("error", "交接失敗，請稍後再試，資料沒有任何變更。");
+    }
+    setHandingOver(false);
   };
+
+  const tabClass = (name) =>
+    `flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-bold transition ${
+      tab === name ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100"
+    }`;
 
   return (
     <AdminLayout>
-      <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-            ROLE MANAGEMENT
+      <div className="space-y-5">
+        {message.text ? (
+          <div
+            className={`rounded-xl px-4 py-3 text-sm font-semibold ${
+              message.type === "error"
+                ? "bg-red-50 text-red-700"
+                : "bg-green-50 text-green-700"
+            }`}
+          >
+            {message.text}
           </div>
+        ) : null}
 
-          <h1 className="mt-3 text-3xl font-black text-slate-900">
-            職位授權管理
-          </h1>
+        {inviteNotice ? (
+          <InviteNotice
+            key={inviteNotice.email}
+            notice={inviteNotice}
+            closeLabel={inviteNotice.afterHandover ? "完成，離開此頁" : "關閉"}
+            onClose={() => {
+              const wasHandover = inviteNotice.afterHandover;
+              setInviteNotice(null);
+              if (wasHandover) refreshProfile();
+            }}
+          />
+        ) : null}
 
-          <p className="mt-4 leading-8 text-slate-600">
-            社長可在此新增幹部資料與設定職位。登入後系統會依照 Firestore 中的 role 欄位控制後台權限。
-          </p>
-
-          <div className="mt-6 rounded-2xl bg-amber-50 px-4 py-4 text-sm leading-7 text-amber-800">
-            目前系統角色對應如下：
-            <br />
-            president＝社長
-            <br />
-            vice＝副社長
-            <br />
-            finance＝財務長
-            <br />
-            activity＝活動長
-            <br />
-            pr＝公關
+        {presidents.length > 1 ? (
+          <div className="rounded-xl bg-red-50 px-4 py-3 text-sm leading-7 text-red-700">
+            目前名單中有 {presidents.length} 位社長（
+            {presidents.map((user) => user.name).join("、")}
+            ）。一個社團只能有一位社長，請把其他人改成適合的職位。
           </div>
+        ) : null}
 
-          <form onSubmit={handleSubmit} className="mt-8 space-y-5">
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                姓名
-              </label>
+        <div className="grid gap-5 xl:grid-cols-2">
+          {/* 新增幹部 */}
+          <section className="min-w-0 rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-center gap-2">
+              <UserPlus size={20} className="text-amber-700" />
+              <h2 className="text-lg font-black text-slate-900">新增幹部</h2>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              勾選「開通帳號」會用這個 Email 建立登入帳號並寄出重設密碼信，對方設定好密碼後登入，就會看到自己職位的後台。
+              舊幹部繼續擔任不用重新開通，要換職位直接在下方名單修改即可。
+            </p>
+
+            <form onSubmit={handleAdd} className="mt-4 grid gap-3 sm:grid-cols-2">
               <input
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="請輸入幹部姓名"
+                placeholder="姓名"
                 required
               />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                Email
-              </label>
               <input
                 type="email"
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="請輸入登入用 Email"
+                placeholder="Email"
                 required
               />
-            </div>
-
-            <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
-                職位
-              </label>
               <select
-                className="w-full rounded-xl border border-slate-300 px-4 py-3 outline-none"
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
               >
-                {roleOptions.map((item) => (
-                  <option key={item.value} value={item.value}>
-                    {item.label}
+                {assignableRoles.map((item) => (
+                  <option key={item} value={item}>
+                    {roleLabelMap[item]}
                   </option>
                 ))}
               </select>
+              <button
+                type="submit"
+                disabled={adding}
+                className="rounded-xl bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-60"
+              >
+                {adding ? "處理中..." : "新增幹部"}
+              </button>
+              <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={inviteOnAdd}
+                  onChange={(e) => setInviteOnAdd(e.target.checked)}
+                />
+                同時開通帳號，寄重設密碼信給對方
+              </label>
+            </form>
+          </section>
+
+          {/* 社長交接 */}
+          <section className="min-w-0 rounded-2xl border-2 border-amber-100 bg-white p-5 shadow-sm sm:p-6">
+            <div className="flex items-center gap-2">
+              <Crown size={20} className="text-amber-700" />
+              <h2 className="text-lg font-black text-slate-900">社長交接</h2>
             </div>
+            <p className="mt-1 text-sm leading-6 text-slate-500">
+              一個社團只能有一位社長，交接後你會轉為歷任幹部。接任者可以從名單中選，也可以直接輸入新幹部的 Email，系統會幫他開通帳號。
+            </p>
 
-            {message ? (
-              <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-700">
-                {message}
-              </div>
-            ) : null}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="rounded-xl bg-slate-900 px-6 py-3 text-sm font-semibold text-white transition hover:bg-slate-800"
-            >
-              {loading ? "儲存中..." : "新增幹部資料"}
-            </button>
-          </form>
+            <form onSubmit={handleHandover} className="mt-4 grid gap-3 sm:grid-cols-2">
+              <select
+                className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none"
+                value={successorId}
+                onChange={(e) => setSuccessorId(e.target.value)}
+                required
+              >
+                <option value="">選擇接任社長…</option>
+                <option value={NEW_SUCCESSOR}>＋ 新幹部（不在名單中）</option>
+                {successorOptions.map((user) => (
+                  <option key={user.id} value={user.id}>
+                    {user.name}（{roleLabelMap[user.role] || "未設定"}）
+                  </option>
+                ))}
+              </select>
+              <input
+                className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+                value={termLabel}
+                onChange={(e) => setTermLabel(e.target.value)}
+                placeholder="屆別，例如：114 學年度"
+              />
+              {successorId === NEW_SUCCESSOR ? (
+                <>
+                  <input
+                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+                    value={newSuccessorName}
+                    onChange={(e) => setNewSuccessorName(e.target.value)}
+                    placeholder="新社長姓名"
+                    required
+                  />
+                  <input
+                    type="email"
+                    className="rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+                    value={newSuccessorEmail}
+                    onChange={(e) => setNewSuccessorEmail(e.target.value)}
+                    placeholder="新社長 Email"
+                    required
+                  />
+                </>
+              ) : null}
+              <label className="flex items-center gap-2 text-sm text-slate-700 sm:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={retireOthers}
+                  onChange={(e) => setRetireOthers(e.target.checked)}
+                />
+                其他現任幹部也一起卸任（整屆換屆時勾選）
+              </label>
+              <button
+                type="submit"
+                disabled={handingOver || !successorId}
+                className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800 disabled:opacity-50 sm:col-span-2"
+              >
+                {handingOver ? "交接中..." : "確認交接"}
+              </button>
+            </form>
+          </section>
         </div>
 
-        <div className="rounded-3xl bg-white p-8 shadow-sm">
-          <div className="text-sm font-semibold tracking-[0.2em] text-amber-700">
-            OFFICER LIST
+        {/* 名單 */}
+        <section className="min-w-0 rounded-2xl bg-white p-5 shadow-sm sm:p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex gap-2">
+              <button type="button" className={tabClass("current")} onClick={() => setTab("current")}>
+                <Users size={16} />
+                現任幹部（{currentOfficers.length}）
+              </button>
+              <button type="button" className={tabClass("alumni")} onClick={() => setTab("alumni")}>
+                <History size={16} />
+                歷任幹部（{alumni.length}）
+              </button>
+            </div>
+            <input
+              className="w-full rounded-xl border border-slate-300 px-4 py-2 text-sm outline-none focus:border-amber-700 sm:w-64"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              placeholder="搜尋姓名、Email、屆別…"
+            />
           </div>
-
-          <h2 className="mt-3 text-3xl font-black text-slate-900">
-            已建立幹部列表
-          </h2>
 
           {fetching ? (
             <div className="mt-6 text-slate-500">載入中...</div>
-          ) : userList.length === 0 ? (
-            <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
-              目前尚未建立任何幹部資料。
+          ) : tab === "current" ? (
+            visibleCurrent.length === 0 ? (
+              <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center text-slate-500">
+                沒有符合條件的現任幹部。
+              </div>
+            ) : (
+              <ul className="mt-5 divide-y divide-slate-100">
+                {visibleCurrent.map((user) => {
+                  const isPresident = user.role === "president";
+                  const isSelf = user.id === profile?.id;
+                  const locked = isPresident && (isSelf || presidents.length === 1);
+
+                  return (
+                    <li key={user.id} className="flex flex-wrap items-center gap-3 py-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-bold text-slate-900">{user.name}</span>
+                          {isSelf ? (
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">你</span>
+                          ) : null}
+                        </div>
+                        <div className="truncate text-sm text-slate-500">{user.email}</div>
+                        <AccountStatus user={user} />
+                      </div>
+
+                      {!isSelf ? (
+                        <InviteButton
+                          user={user}
+                          disabled={busyId === user.id}
+                          onClick={() => sendInvite(user)}
+                        />
+                      ) : null}
+
+                      {locked ? (
+                        <span className="rounded-full bg-amber-700 px-3 py-1 text-xs font-bold text-white">
+                          社長
+                        </span>
+                      ) : (
+                        <>
+                          <RoleSelect
+                            value={isPresident ? "" : user.role}
+                            onChange={(next) => changeRole(user, next)}
+                            disabled={busyId === user.id}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => retire(user)}
+                            disabled={busyId === user.id}
+                            className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            卸任
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => removeAccess(user)}
+                            disabled={busyId === user.id}
+                            className="rounded-lg px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            移除
+                          </button>
+                        </>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )
+          ) : visibleAlumni.length === 0 ? (
+            <div className="mt-5 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-center text-slate-500">
+              沒有符合條件的歷任幹部。
             </div>
           ) : (
-            <div className="mt-6 space-y-4">
-              {userList.map((item) => (
-                <div
-                  key={item.id}
-                  className="rounded-2xl border border-slate-200 p-5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <div className="text-xl font-black text-slate-900">
-                        {item.name || "未命名"}
+            <>
+              <p className="mt-4 text-sm text-slate-500">
+                歷任幹部只能進入「照片 / 影片管理」協助上傳，並只能修改自己上傳的項目。
+              </p>
+              <ul className="mt-3 divide-y divide-slate-100">
+                {visibleAlumni.map((user) => (
+                  <li key={user.id} className="flex flex-wrap items-center gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate font-bold text-slate-900">{user.name}</div>
+                      <div className="truncate text-sm text-slate-500">{user.email}</div>
+                      <div className="mt-1 text-xs text-slate-400">
+                        曾任{roleLabelMap[user.formerRole] || "幹部"}
+                        {user.termLabel ? ` ・ ${user.termLabel}` : ""}
+                        {formatDate(user.termEndedAt)
+                          ? ` ・ ${formatDate(user.termEndedAt)} 卸任`
+                          : ""}
                       </div>
-
-                      <div className="mt-2 text-sm text-slate-500">
-                        Email：{item.email || "未填寫"}
-                      </div>
-
-                      <div className="mt-2 text-sm text-slate-500">
-                        職位代碼：{item.role || "未設定"}
-                      </div>
-
-                      <div className="mt-2 text-sm font-semibold text-slate-700">
-                        顯示名稱：{roleLabelMap[item.role] || "未知職位"}
-                      </div>
+                      <AccountStatus user={user} />
                     </div>
 
+                    <InviteButton
+                      user={user}
+                      disabled={busyId === user.id}
+                      onClick={() => sendInvite(user)}
+                    />
+                    <span className="text-sm text-slate-500">恢復為</span>
+                    <RoleSelect
+                      value=""
+                      onChange={(next) => changeRole(user, next)}
+                      disabled={busyId === user.id}
+                    />
                     <button
-                      onClick={() => handleDelete(item.id, item.name)}
-                      disabled={deletingId === item.id}
-                      className="rounded-xl bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-600"
+                      type="button"
+                      onClick={() => removeAccess(user)}
+                      disabled={busyId === user.id}
+                      className="rounded-lg px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-50"
                     >
-                      {deletingId === item.id ? "刪除中..." : "刪除"}
+                      移除權限
                     </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                  </li>
+                ))}
+              </ul>
+            </>
           )}
-        </div>
+        </section>
       </div>
     </AdminLayout>
   );

@@ -16,6 +16,9 @@ import { useAuth } from "../../context/AuthContext";
 import AdminLayout from "../../components/AdminLayout";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+// ?inline：社徽直接嵌進程式碼，產生 PDF 時才不會因為讀不到圖片而空白
+import clubLogo from "../../assets/brand/logo.webp?inline";
+import { isDriveSyncEnabled, uploadFinancePdf } from "../../lib/driveSync";
 
 const expenseTypeOptions = ["印刷費", "活動費", "其他"];
 const subsidyTypeOptions = ["學校補助", "社費支出"];
@@ -35,7 +38,7 @@ const statusClassMap = {
   draft: "bg-slate-100 text-slate-700",
   pending_receiver_signature: "bg-blue-100 text-blue-700",
   pending_treasurer_signature: "bg-purple-100 text-purple-700",
-  pending_president_review: "bg-amber-100 text-amber-700",
+  pending_president_review: "bg-yellow-100 text-yellow-800",
   approved: "bg-green-100 text-green-700",
   returned: "bg-orange-100 text-orange-700",
   rejected: "bg-red-100 text-red-700",
@@ -57,25 +60,47 @@ const initialForm = {
   description: "",
 };
 
-const pdfLabelCell = {
+// 正式 PDF 的表格樣式
+const pdfTable = {
+  width: "100%",
+  borderCollapse: "collapse",
+  tableLayout: "fixed",
+  border: "2px solid #111",
+};
+
+const pdfCell = {
   border: "1px solid #111",
-  background: "#f0f0f0",
-  fontWeight: "700",
+  padding: "6px 10px",
+  verticalAlign: "middle",
+};
+
+const pdfLabel = {
+  ...pdfCell,
+  background: "#f2f2f2",
+  fontWeight: 700,
   textAlign: "center",
-  padding: "7px",
-  width: "16%",
+  letterSpacing: "1px",
 };
 
-const pdfValueCell = {
-  border: "1px solid #111",
-  padding: "7px",
-  minHeight: "30px",
-};
-
-const pdfSignatureCell = {
-  border: "1px solid #111",
-  padding: "8px",
+const pdfSignCell = {
+  borderLeft: "1px solid #111",
+  padding: "8px 10px",
   verticalAlign: "top",
+};
+
+const pdfSignatureImage = {
+  display: "block",
+  width: "190px",
+  height: "64px",
+  objectFit: "contain",
+  margin: "6px auto 0",
+};
+
+const pdfBlank = {
+  display: "inline-block",
+  width: "150px",
+  borderBottom: "1px solid #111",
+  height: "18px",
 };
 
 function toTaiwanYear(dateString) {
@@ -172,6 +197,31 @@ function readFileAsDataUrl(file) {
   });
 }
 
+// 收據照片在上傳前先縮小：長邊最多 1600px，保持清晰又不會超過 Firestore 單筆 1MB 的上限
+function compressImage(file, maxSize = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const ratio = Math.min(1, maxSize / Math.max(image.width, image.height));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(image.width * ratio);
+      canvas.height = Math.round(image.height * ratio);
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", quality));
+    };
+    image.onerror = (err) => {
+      URL.revokeObjectURL(url);
+      reject(err);
+    };
+    image.src = url;
+  });
+}
+
 function createSignatureToken() {
   if (window.crypto && window.crypto.randomUUID) {
     return window.crypto.randomUUID();
@@ -207,6 +257,7 @@ function normalizeRecordToExportData(record, clubSeal) {
     treasurerSignature: record.treasurerSignature || "",
     presidentSignature: record.presidentSignature || "",
     clubSeal: clubSeal || "",
+    reviewedByName: record.reviewedByName || "",
   };
 }
 
@@ -392,6 +443,7 @@ function SignaturePad({ label, value, onChange, disabled = false }) {
   );
 }
 
+// 正式 PDF 版面：依照社團紙本「領款證明」的格式排版（A4，794 × 1123 px）
 function FinancePdfTemplate({
   form,
   amountChinese,
@@ -402,313 +454,267 @@ function FinancePdfTemplate({
   clubSeal,
 }) {
   const rocDate = toTaiwanYear(form.date);
+  const receiptColumns = receipts.length >= 3 ? 3 : receipts.length === 2 ? 2 : 1;
 
   return (
     <div
       id="finance-pdf-template"
-      className="mx-auto bg-white text-black"
       style={{
         width: "794px",
         height: "1123px",
         boxSizing: "border-box",
-        padding: "32px 42px",
+        padding: "34px 44px 30px",
         overflow: "hidden",
+        background: "#fff",
+        color: "#111",
+        // 統一使用網路字型，不同電腦、手機產生的 PDF 版面都一樣
         fontFamily:
           '"Noto Sans TC", "Microsoft JhengHei", "PingFang TC", Arial, sans-serif',
+        fontSize: "14px",
+        // 固定行高（px），html2canvas 產生 PDF 時文字才不會往下偏
+        lineHeight: "20px",
       }}
     >
-      <div className="mb-2 text-center">
-        <div style={{ fontSize: "16px", fontWeight: "700", letterSpacing: "2px" }}>
-          淡江大學合氣道社－財務證明
+      {/* 頁首：社徽＋表單名稱 */}
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "10px" }}>
+        <img src={clubLogo} alt="" style={{ width: "46px", height: "46px", objectFit: "contain" }} />
+        <div style={{ fontSize: "17px", fontWeight: 700, letterSpacing: "4px" }}>
+          淡江大學合氣道社－財務表單
         </div>
       </div>
 
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          tableLayout: "fixed",
-          border: "2px solid #111",
-          fontSize: "13px",
-        }}
-      >
+      <table style={pdfTable}>
+        <colgroup>
+          <col style={{ width: "17%" }} />
+          <col style={{ width: "39%" }} />
+          <col style={{ width: "15%" }} />
+          <col style={{ width: "29%" }} />
+        </colgroup>
         <tbody>
           <tr>
             <td
-              colSpan="6"
+              colSpan="4"
               style={{
-                border: "1px solid #111",
-                background: "#444",
+                ...pdfCell,
+                background: "#3a3a3a",
                 color: "#fff",
                 textAlign: "center",
-                fontSize: "17px",
-                fontWeight: "700",
-                padding: "9px",
-                letterSpacing: "3px",
+                fontSize: "19px",
+                fontWeight: 700,
+                letterSpacing: "6px",
+                height: "46px",
+                lineHeight: "24px",
+                padding: "0 10px",
               }}
             >
-              淡江大學合氣道社－財務證明
+              淡江大學合氣道社－領款證明
             </td>
           </tr>
 
-          <tr>
-            <td style={pdfLabelCell}>所屬活動</td>
-            <td colSpan="3" style={pdfValueCell}>
-              {form.activityName || ""}
-            </td>
-            <td style={pdfLabelCell}>活動編號</td>
-            <td style={pdfValueCell}>{form.activityCode || ""}</td>
+          <tr style={{ height: "40px" }}>
+            <td style={pdfLabel}>所屬活動</td>
+            <td style={pdfCell}>{form.activityName}</td>
+            <td style={pdfLabel}>活動編號</td>
+            <td style={pdfCell}>{form.activityCode}</td>
           </tr>
 
-          <tr>
-            <td style={pdfLabelCell}>費用類別</td>
-            <td colSpan="3" style={pdfValueCell}>
+          <tr style={{ height: "40px" }}>
+            <td style={pdfLabel}>費用類別</td>
+            <td style={pdfCell}>
               {expenseTypeOptions.map((item) => (
-                <PdfCheckbox
-                  key={item}
-                  checked={form.expenseType === item}
-                  label={item}
-                />
+                <PdfCheckbox key={item} checked={form.expenseType === item} label={item} />
               ))}
             </td>
-            <td style={pdfLabelCell}>費用編號</td>
-            <td style={pdfValueCell}>{form.expenseCode || ""}</td>
+            <td style={pdfLabel}>費用編號</td>
+            <td style={pdfCell}>{form.expenseCode}</td>
           </tr>
 
-          <tr>
-            <td style={pdfLabelCell}>領款日期</td>
-            <td colSpan="3" style={pdfValueCell}>
-              民國 {rocDate.year} 年 {rocDate.month} 月 {rocDate.day} 日
+          <tr style={{ height: "40px" }}>
+            <td style={pdfLabel}>領款日期</td>
+            <td style={pdfCell}>
+              民國 <b>{rocDate.year || "　　"}</b> 年 <b>{rocDate.month || "　"}</b> 月{" "}
+              <b>{rocDate.day || "　"}</b> 日
             </td>
-            <td style={pdfLabelCell}>申請補助</td>
-            <td style={pdfValueCell}>
+            <td style={pdfLabel}>申請補助</td>
+            <td style={pdfCell}>
               {subsidyTypeOptions.map((item) => (
-                <div key={item} style={{ marginBottom: "3px" }}>
-                  <PdfCheckbox checked={form.subsidyType === item} label={item} />
-                </div>
+                <PdfCheckbox key={item} checked={form.subsidyType === item} label={item} />
               ))}
             </td>
           </tr>
 
+          {/* 備註：標籤在左上角，下方留空間書寫 */}
           <tr>
-            <td style={pdfLabelCell}>備註</td>
-            <td
-              colSpan="5"
-              style={{
-                ...pdfValueCell,
-                height: "78px",
-                verticalAlign: "top",
-              }}
-            >
-              {form.note || ""}
+            <td colSpan="4" style={{ ...pdfCell, height: "74px", verticalAlign: "top" }}>
+              <div style={{ fontWeight: 700 }}>備註</div>
+              <div style={{ marginTop: "2px", whiteSpace: "pre-wrap" }}>{form.note}</div>
             </td>
           </tr>
 
-          <tr>
-            <td colSpan="2" style={pdfLabelCell}>
+          <tr style={{ height: "44px" }}>
+            <td style={{ ...pdfLabel, letterSpacing: 0, whiteSpace: "nowrap", padding: "6px 4px" }}>
               新台幣（大寫）
             </td>
-            <td
-              colSpan="2"
-              style={{
-                ...pdfValueCell,
-                textAlign: "center",
-                fontWeight: "700",
-              }}
-            >
+            <td style={{ ...pdfCell, textAlign: "center", fontSize: "16px", fontWeight: 700, letterSpacing: "2px" }}>
               {amountChinese}
             </td>
-            <td style={pdfLabelCell}>NT$</td>
-            <td style={{ ...pdfValueCell, fontWeight: "700" }}>
-              {form.amount || ""}
+            <td style={pdfLabel}>NT$</td>
+            <td style={{ ...pdfCell, fontSize: "16px", fontWeight: 700 }}>
+              {form.amount ? Number(form.amount).toLocaleString("en-US") : ""}
             </td>
           </tr>
 
+          {/* 領訖聲明與領款人資料 */}
           <tr>
-            <td
-              colSpan="6"
-              style={{
-                border: "1px solid #111",
-                height: "155px",
-                padding: "12px",
-                verticalAlign: "top",
-              }}
-            >
-              <div style={{ marginBottom: "8px", fontWeight: "700" }}>
-                上款已照數領訖　此據
-              </div>
+            <td colSpan="4" style={{ ...pdfCell, height: "150px", verticalAlign: "top", padding: "10px 14px" }}>
+              <div style={{ fontWeight: 700, letterSpacing: "2px" }}>{"上款已照數領訖　此據"}</div>
+              <div>{"淡江大學合氣道社　台照"}</div>
 
-              <div style={{ marginBottom: "8px" }}>淡江大學合氣道社台照</div>
-
-              <div style={{ marginLeft: "300px", lineHeight: "29px" }}>
-                <div>
-                  ◆ 領款人簽章：
+              <div style={{ marginLeft: "300px", marginTop: "4px", lineHeight: "34px" }}>
+                <div style={{ display: "flex", alignItems: "center" }}>
+                  <span>◆ 領款人簽章：</span>
                   {receiverSignature ? (
                     <img
                       src={receiverSignature}
-                      alt="領款人簽章"
-                      style={{
-                        width: "145px",
-                        height: "40px",
-                        objectFit: "contain",
-                        verticalAlign: "middle",
-                      }}
+                      alt=""
+                      style={{ width: "auto", maxWidth: "170px", height: "40px", objectFit: "contain" }}
                     />
                   ) : (
-                    "________________"
+                    <span style={pdfBlank} />
                   )}
+                  {form.receiverName ? (
+                    <span style={{ marginLeft: "6px", color: "#333" }}>（{form.receiverName}）</span>
+                  ) : null}
                 </div>
-
                 <div>
                   ◆ 身分別：
-                  <span style={{ marginLeft: "10px" }}>
-                    <PdfCheckbox
-                      checked={form.receiverType === "淡江合氣道社員"}
-                      label="淡江合氣道社員"
-                    />
-                  </span>
-
-                  <span style={{ marginLeft: "12px" }}>
-                    <PdfCheckbox
-                      checked={form.receiverType === "非社員"}
-                      label={`非社員：${form.nonMemberNote || "______"}`}
-                    />
-                  </span>
+                  <PdfCheckbox checked={form.receiverType === "淡江合氣道社員"} label="淡江合氣道社員" />
+                  <PdfCheckbox
+                    checked={form.receiverType === "非社員"}
+                    label={`非社員：${form.nonMemberNote || "＿＿＿＿"}`}
+                  />
                 </div>
-
-                <div>
-                  ◆ 學號（身分證號）：{form.studentId || "________________"}
-                </div>
-
-                <div>
-                  ◆ 領款人姓名：{form.receiverName || "________________"}
-                </div>
+                <div>◆ 學號（身分證號）：{form.studentId || <span style={pdfBlank} />}</div>
               </div>
             </td>
           </tr>
 
+          {/* 收據黏貼處 */}
           <tr>
-            <td
-              colSpan="6"
-              style={{
-                border: "1px solid #111",
-                height: "330px",
-                padding: "10px",
-                verticalAlign: "top",
-              }}
-            >
-              <div style={{ fontWeight: "700", marginBottom: "6px" }}>
-                費用明細及收據黏貼處（浮貼）
-              </div>
-
-              <div style={{ fontSize: "12px", marginBottom: "8px" }}>
+            <td colSpan="4" style={{ ...pdfCell, height: "418px", verticalAlign: "top", padding: "10px 14px" }}>
+              <div style={{ fontWeight: 700 }}>費用明細及收據黏貼處（浮貼）</div>
+              <div style={{ fontSize: "12px", color: "#333" }}>
                 ※ 申請校補助之款項請貼收據影本；社費支出之款項請貼正本收據
               </div>
-
               <div
                 style={{
-                  border: "1px dashed #777",
-                  height: "270px",
-                  padding: "8px",
+                  marginTop: "8px",
+                  height: "352px",
                   display: "grid",
-                  gridTemplateColumns: receipts.length >= 2 ? "1fr 1fr" : "1fr",
+                  gridTemplateColumns: `repeat(${receiptColumns}, 1fr)`,
                   gap: "8px",
-                  boxSizing: "border-box",
                 }}
               >
-                {receipts.length > 0 ? (
-                  receipts.map((receipt, index) => (
-                    <div
-                      key={index}
-                      style={{
-                        border: "1px solid #ccc",
-                        padding: "4px",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        minHeight: "118px",
-                        overflow: "hidden",
-                      }}
-                    >
-                      <img
-                        src={receipt}
-                        alt={`收據 ${index + 1}`}
-                        style={{
-                          maxWidth: "100%",
-                          maxHeight: receipts.length >= 2 ? "118px" : "250px",
-                          objectFit: "contain",
-                        }}
-                      />
-                    </div>
-                  ))
-                ) : (
+                {receipts.map((receipt, index) => (
                   <div
+                    key={index}
                     style={{
-                      color: "#777",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      height: "250px",
+                      overflow: "hidden",
+                      minHeight: 0,
                     }}
                   >
-                    收據 / 發票 JPG 黏貼處
+                    <img
+                      src={receipt}
+                      alt=""
+                      style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }}
+                    />
                   </div>
-                )}
+                ))}
               </div>
             </td>
           </tr>
 
+          {/* 簽章列 */}
           <tr>
-            <td colSpan="2" style={{ ...pdfSignatureCell, height: "92px" }}>
-              <div style={{ fontWeight: "700" }}>經手人（財務長）簽章：</div>
-              {treasurerSignature ? (
-                <img
-                  src={treasurerSignature}
-                  alt="財務長簽章"
-                  style={{
-                    width: "170px",
-                    height: "56px",
-                    objectFit: "contain",
-                    marginTop: "5px",
-                  }}
-                />
-              ) : null}
-            </td>
-
-            <td colSpan="3" style={{ ...pdfSignatureCell, height: "92px" }}>
-              <div style={{ fontWeight: "700" }}>社長簽章：</div>
-              {presidentSignature ? (
-                <img
-                  src={presidentSignature}
-                  alt="社長簽章"
-                  style={{
-                    width: "170px",
-                    height: "56px",
-                    objectFit: "contain",
-                    marginTop: "5px",
-                  }}
-                />
-              ) : null}
-            </td>
-
-            <td style={{ ...pdfSignatureCell, height: "92px" }}>
-              <div style={{ fontWeight: "700" }}>社章</div>
-              {clubSeal ? (
-                <img
-                  src={clubSeal}
-                  alt="社章"
-                  style={{
-                    width: "66px",
-                    height: "66px",
-                    objectFit: "contain",
-                    marginTop: "3px",
-                  }}
-                />
-              ) : null}
+            <td colSpan="4" style={{ ...pdfCell, padding: 0 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "34%" }} />
+                  <col style={{ width: "44%" }} />
+                  <col style={{ width: "22%" }} />
+                </colgroup>
+                <tbody>
+                  <tr style={{ height: "112px" }}>
+                    <td style={{ ...pdfSignCell, borderLeft: "none" }}>
+                      <div style={{ fontWeight: 700 }}>經手人（財務長）簽章：</div>
+                      {treasurerSignature ? (
+                        <img src={treasurerSignature} alt="" style={pdfSignatureImage} />
+                      ) : null}
+                    </td>
+                    <td style={pdfSignCell}>
+                      <div style={{ fontWeight: 700 }}>社長簽章：</div>
+                      {presidentSignature ? (
+                        <img src={presidentSignature} alt="" style={pdfSignatureImage} />
+                      ) : null}
+                    </td>
+                    <td style={pdfSignCell}>
+                      <div style={{ fontWeight: 700 }}>社章</div>
+                      {clubSeal ? (
+                        <div style={{ textAlign: "center" }}>
+                          <img
+                            src={clubSeal}
+                            alt=""
+                            style={{ width: "78px", height: "78px", objectFit: "contain" }}
+                          />
+                        </div>
+                      ) : null}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </td>
           </tr>
         </tbody>
       </table>
+    </div>
+  );
+}
+
+// PDF 預覽：依外框寬度自動縮放 A4 版面，整張都看得到、不會被切掉
+function FitToWidth({ baseWidth, children }) {
+  const outerRef = useRef(null);
+  const innerRef = useRef(null);
+  const [size, setSize] = useState({ scale: 0, height: 0 });
+
+  useEffect(() => {
+    const outer = outerRef.current;
+    const inner = innerRef.current;
+    if (!outer || !inner) return undefined;
+
+    const observer = new ResizeObserver(() => {
+      const scale = Math.min(1, outer.clientWidth / baseWidth);
+      setSize({ scale, height: inner.offsetHeight * scale });
+    });
+    observer.observe(outer);
+    observer.observe(inner);
+    return () => observer.disconnect();
+  }, [baseWidth]);
+
+  return (
+    <div ref={outerRef} className="w-full overflow-hidden" style={{ height: size.height }}>
+      <div
+        ref={innerRef}
+        style={{
+          width: baseWidth,
+          transform: `scale(${size.scale})`,
+          transformOrigin: "top left",
+        }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -721,6 +727,10 @@ export default function FinancePage() {
   const [currentStatus, setCurrentStatus] = useState("");
   const [form, setForm] = useState(initialForm);
   const [records, setRecords] = useState([]);
+
+  // 單據列表搜尋與狀態篩選
+  const [recordKeyword, setRecordKeyword] = useState("");
+  const [recordStatus, setRecordStatus] = useState("all");
   const [receiptImages, setReceiptImages] = useState([]);
   const [receiverSignature, setReceiverSignature] = useState("");
   const [treasurerSignature, setTreasurerSignature] = useState("");
@@ -792,6 +802,17 @@ export default function FinancePage() {
     }
   };
 
+  const filteredRecords = useMemo(() => {
+    const kw = recordKeyword.trim().toLowerCase();
+    return records.filter((item) => {
+      if (recordStatus !== "all" && item.status !== recordStatus) return false;
+      if (!kw) return true;
+      return [item.activityName, item.receiverName, item.activityCode, item.expenseCode]
+        .filter(Boolean)
+        .some((text) => String(text).toLowerCase().includes(kw));
+    });
+  }, [records, recordKeyword, recordStatus]);
+
   const fetchRecords = async () => {
     setFetching(true);
 
@@ -838,8 +859,12 @@ export default function FinancePage() {
 
     for (const file of files) {
       if (!file.type.startsWith("image/")) continue;
-      const dataUrl = await readFileAsDataUrl(file);
-      imageUrls.push(dataUrl);
+      try {
+        imageUrls.push(await compressImage(file));
+      } catch {
+        // 瀏覽器無法解析的圖片格式（例如部分 HEIC）就保留原檔
+        imageUrls.push(await readFileAsDataUrl(file));
+      }
     }
 
     setReceiptImages((prev) => [...prev, ...imageUrls]);
@@ -1184,6 +1209,23 @@ export default function FinancePage() {
       setCurrentStatus("approved");
       setMessage("社長已核准，現在可以產生正式 PDF。");
       fetchRecords();
+
+      // 有設定 Google Drive 同步時，核准後自動產生 PDF 並存檔
+      if (isDriveSyncEnabled()) {
+        setExportData({
+          id: currentRecordId,
+          form,
+          amountChinese,
+          receiptImages,
+          receiverSignature,
+          treasurerSignature,
+          presidentSignature,
+          clubSeal,
+          reviewedByName: profile?.name || "",
+          mode: "drive",
+        });
+        setMessage("社長已核准，正在自動存到 Google Drive...");
+      }
     } catch (err) {
       console.error("approve finance record error:", err);
       setMessage("社長核准失敗。");
@@ -1275,9 +1317,16 @@ export default function FinancePage() {
       return;
     }
 
+    // mode：download = 下載並存到 Drive；drive = 只存到 Drive（社長核准後自動執行）
+    const mode = payload.mode || "download";
+
     try {
+      // 等字型下載完成再截圖，避免 PDF 用到備用字型
+      if (document.fonts?.ready) await document.fonts.ready;
+
+      // 以 3 倍解析度輸出（約 288 dpi），列印時文字和收據都清楚
       const canvas = await html2canvas(pdfRef.current, {
-        scale: 1.05,
+        scale: 3,
         backgroundColor: "#ffffff",
         useCORS: true,
         width: 794,
@@ -1286,9 +1335,15 @@ export default function FinancePage() {
         windowHeight: 1123,
         scrollX: 0,
         scrollY: 0,
+        // Tailwind 預設把圖片設成 display:block，會讓 html2canvas 量錯字型基線、文字往下偏
+        onclone: (clonedDoc) => {
+          const style = clonedDoc.createElement("style");
+          style.textContent = "img { display: inline-block; }";
+          clonedDoc.head.appendChild(style);
+        },
       });
 
-      const imgData = canvas.toDataURL("image/jpeg", 0.62);
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
 
       const pdf = new jsPDF({
         orientation: "p",
@@ -1297,15 +1352,48 @@ export default function FinancePage() {
         compress: true,
       });
 
-      pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "FAST");
+      pdf.addImage(imgData, "JPEG", 0, 0, 210, 297, undefined, "MEDIUM");
 
-      const safeActivityName = payload.form.activityName || "財務單據";
+      const safeActivityName = (payload.form.activityName || "財務單據").replace(/[\\/:*?"<>|]/g, "_");
       const safeDate = payload.form.date || new Date().toISOString().slice(0, 10);
       const fileName = `${safeDate}_${safeActivityName}_${payload.form.expenseType}_${payload.form.amount || 0}元.pdf`;
 
-      pdf.save(fileName);
+      if (mode !== "drive") pdf.save(fileName);
 
-      setMessage("正式 PDF 已產生並下載。");
+      let driveNote = "";
+      if (isDriveSyncEnabled() && payload.id) {
+        try {
+          const { fileUrl } = await uploadFinancePdf({
+            pdfBase64: pdf.output("datauristring").split(",")[1],
+            fileName,
+            record: {
+              id: payload.id,
+              ...payload.form,
+              amountChinese: payload.amountChinese,
+              reviewedByName: payload.reviewedByName || "",
+            },
+          });
+          await updateDoc(doc(db, "financeRecords", payload.id), {
+            driveFileUrl: fileUrl,
+            driveSyncedAt: serverTimestamp(),
+          });
+          setRecords((list) =>
+            list.map((item) =>
+              item.id === payload.id ? { ...item, driveFileUrl: fileUrl } : item
+            )
+          );
+          driveNote = "已存到 Google Drive。";
+        } catch (err) {
+          console.error("drive sync error:", err);
+          driveNote = `存到 Google Drive 失敗：${err.message}。可以稍後按「產生 PDF」重試。`;
+        }
+      }
+
+      setMessage(
+        mode === "drive"
+          ? `社長已核准。${driveNote}`
+          : `正式 PDF 已產生並下載。${driveNote}`
+      );
     } catch (err) {
       console.error("generate pdf error:", err);
       setMessage("PDF 產生失敗。");
@@ -1813,15 +1901,40 @@ export default function FinancePage() {
                 財務單據列表
               </h2>
 
+              <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto]">
+                <input
+                  className="w-full rounded-xl border border-slate-300 px-4 py-2.5 text-sm outline-none focus:border-amber-700"
+                  value={recordKeyword}
+                  onChange={(e) => setRecordKeyword(e.target.value)}
+                  placeholder="搜尋活動名稱、領款人、編號…"
+                />
+                <select
+                  className="rounded-xl border border-slate-300 px-3 py-2.5 text-sm outline-none"
+                  value={recordStatus}
+                  onChange={(e) => setRecordStatus(e.target.value)}
+                >
+                  <option value="all">全部狀態</option>
+                  {Object.entries(statusLabelMap).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}（{records.filter((r) => r.status === value).length}）
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {fetching ? (
                 <div className="mt-6 text-slate-500">載入中...</div>
               ) : records.length === 0 ? (
                 <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
                   目前尚未建立任何財務紀錄。
                 </div>
+              ) : filteredRecords.length === 0 ? (
+                <div className="mt-6 rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-6 py-8 text-slate-500">
+                  沒有符合條件的單據。
+                </div>
               ) : (
                 <div className="mt-6 space-y-4">
-                  {records.map((item) => (
+                  {filteredRecords.map((item) => (
                     <div
                       key={item.id}
                       className="min-w-0 rounded-2xl border border-slate-200 p-4 sm:p-5"
@@ -1868,6 +1981,17 @@ export default function FinancePage() {
                             >
                               產生 PDF
                             </button>
+
+                            {item.driveFileUrl ? (
+                              <a
+                                href={item.driveFileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="w-full rounded-xl border border-green-300 bg-green-50 px-4 py-2 text-center text-sm font-semibold text-green-700 hover:bg-green-100 sm:w-auto"
+                              >
+                                已存到 Drive ↗
+                              </a>
+                            ) : null}
 
                             {isFinanceRole ? (
                               <button
@@ -1961,16 +2085,8 @@ export default function FinancePage() {
                 下方是即將輸出的財務證明版面。正式 PDF 會以 A4 固定比例輸出。
               </p>
 
-              <div className="mt-6 w-full max-w-full overflow-x-auto rounded-2xl border border-slate-200 bg-slate-100 p-3 sm:p-4">
-                <div
-                  style={{
-                    transform: "scale(0.55)",
-                    transformOrigin: "top left",
-                    width: "794px",
-                    height: "650px",
-                  }}
-                  className="sm:!h-[760px] sm:!scale-[0.65]"
-                >
+              <div className="mt-6 w-full max-w-full rounded-2xl border border-slate-200 bg-slate-100 p-3 sm:p-4">
+                <FitToWidth baseWidth={794}>
                   <FinancePdfTemplate
                     form={form}
                     amountChinese={amountChinese}
@@ -1980,7 +2096,7 @@ export default function FinancePage() {
                     presidentSignature={presidentSignature}
                     clubSeal={clubSeal}
                   />
-                </div>
+                </FitToWidth>
               </div>
 
               <div

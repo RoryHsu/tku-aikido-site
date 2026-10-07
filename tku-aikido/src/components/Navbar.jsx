@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Menu, X } from "lucide-react";
+import logo from "../assets/brand/logo.webp";
 
 const navItems = [
   {
@@ -54,14 +55,17 @@ export default function Navbar() {
         <Link
           to="/"
           onClick={closeMobileMenu}
-          className="min-w-0 shrink-0"
+          className="flex min-w-0 shrink-0 items-center gap-3"
           aria-label="回到淡江合氣道社首頁"
         >
-          <div className="text-xs font-bold tracking-[0.35em] text-slate-400">
-            TAMKANG UNIVERSITY
-          </div>
-          <div className="mt-1 text-2xl font-black leading-none text-slate-950">
-            淡江合氣道社
+          <img src={logo} alt="" className="h-11 w-11 rounded-full sm:h-12 sm:w-12" />
+          <div>
+            <div className="text-xs font-bold tracking-[0.35em] text-slate-400">
+              TAMKANG UNIVERSITY
+            </div>
+            <div className="mt-1 font-serif text-2xl font-black leading-none text-slate-950">
+              淡江合氣道社
+            </div>
           </div>
         </Link>
 
