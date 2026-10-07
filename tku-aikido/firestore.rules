@@ -12,7 +12,9 @@ service cloud.firestore {
         公關 pr         ：活動公告、照片影片
         歷任幹部 alumni ：只能上傳照片影片，並只能修改 / 刪除自己上傳的
         開發者 developer：全部功能（網站維護用），社長不能修改或刪除這個帳號，
-                          只能在 Firebase 主控台手動建立
+                          只能在 Firebase 主控台手動建立。
+                          previewRole 有值時，改用那個職位的權限（測試用），
+                          "none" 代表沒有職位
 
       幹部資料存在 users/{小寫Email}，用登入者的 Email 找出職位。
     */
@@ -29,19 +31,44 @@ service cloud.firestore {
       return /databases/$(database)/documents/users/$(myEmail());
     }
 
-    function myRole() {
-      return get(myUserPath()).data.get('role', '');
+    function myData() {
+      return get(myUserPath()).data;
     }
 
-    // 開發者擁有所有職位的權限
+    // 資料庫裡真正的職位
+    function myRole() {
+      return myData().get('role', '');
+    }
+
+    // 目前使用的職位：開發者預覽其他職位時，以預覽的職位為準
+    function effectiveRole() {
+      return myRole() != 'developer' || myData().get('previewRole', '') == ''
+        ? myRole()
+        : myData().get('previewRole', '');
+    }
+
+    // 開發者（沒有在預覽時）擁有所有職位的權限
     function hasRole(roles) {
       return signedIn()
         && exists(myUserPath())
-        && (myRole() in roles || myRole() == 'developer');
+        && (effectiveRole() in roles || effectiveRole() == 'developer');
     }
 
+    // 真正的開發者帳號（不管有沒有在預覽）
     function isDeveloper() {
-      return hasRole(['developer']);
+      return signedIn() && exists(myUserPath()) && myRole() == 'developer';
+    }
+
+    // 開發者沒有在預覽其他職位
+    function isDeveloperMode() {
+      return isDeveloper() && effectiveRole() == 'developer';
+    }
+
+    // 開發者只能改自己文件的 previewRole / name，不能改掉自己的 developer 職位
+    function isDeveloperSelfEdit(userId) {
+      return isDeveloper()
+        && userId == myEmail()
+        && request.resource.data.get('role', '') == 'developer';
     }
 
     function isPresident() {
@@ -62,13 +89,14 @@ service cloud.firestore {
       allow get: if signedIn() && (userId == myEmail() || isPresident());
       allow list: if isPresident()
         || (signedIn() && resource.data.email.lower() == myEmail());
-      allow create: if isDeveloper()
+      allow create: if isDeveloperMode()
         || (isPresident() && request.resource.data.get('role', '') != 'developer');
-      allow update: if isDeveloper()
+      allow update: if isDeveloperMode()
+        || isDeveloperSelfEdit(userId)
         || (isPresident()
             && resource.data.get('role', '') != 'developer'
             && request.resource.data.get('role', '') != 'developer');
-      allow delete: if isDeveloper()
+      allow delete: if isDeveloperMode()
         || (isPresident() && resource.data.get('role', '') != 'developer');
     }
 

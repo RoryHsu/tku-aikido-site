@@ -18,6 +18,30 @@ export const roleLabelMap = {
   alumni: "歷任幹部",
 };
 
+// 開發者可以切換成這些職位預覽（"none" 代表還沒被授權職位的帳號）
+export const previewRoleOptions = [
+  { value: "", label: "開發者（全部功能）" },
+  { value: "president", label: "社長" },
+  { value: "vice", label: "副社長" },
+  { value: "finance", label: "財務長" },
+  { value: "activity", label: "活動長" },
+  { value: "pr", label: "公關" },
+  { value: "alumni", label: "歷任幹部" },
+  { value: "none", label: "未設定職位" },
+];
+
+// 後台顯示用的職位名稱
+export function roleLabelOf(profile) {
+  if (profile?.isDeveloper) {
+    if (!profile.previewRole) return "開發者";
+    const label =
+      previewRoleOptions.find((item) => item.value === profile.previewRole)?.label ||
+      profile.previewRole;
+    return `預覽：${label}`;
+  }
+  return roleLabelMap[profile?.role] || profile?.role || "未設定";
+}
+
 // 各職位可使用的功能（社長全部都可以）
 //   所有現任幹部：活動公告、照片影片
 //   副社長：另外可管理社員資料
