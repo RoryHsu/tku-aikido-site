@@ -7,7 +7,12 @@ import { adminMenuItems, roleLabelOf } from "./adminMenu";
 import DeveloperRoleSwitcher from "./DeveloperRoleSwitcher";
 
 export default function AdminLayout({ children }) {
-  const { profile } = useAuth();
+  const { profile, currentUser } = useAuth();
+
+  // 開發者文件的 ID 必須和登入 Email（小寫）完全一樣，Firestore 規則才認得
+  const loginEmailKey = (currentUser?.email || "").toLowerCase();
+  const developerIdMismatch =
+    profile?.isDeveloper && loginEmailKey && profile.id !== loginEmailKey;
   const { pathname } = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -62,6 +67,13 @@ export default function AdminLayout({ children }) {
             </div>
             </div>
           </div>
+
+          {developerIdMismatch ? (
+            <div className="border-t border-red-200 bg-red-50 px-4 py-2 text-xs font-semibold leading-5 text-red-700 sm:px-6 lg:px-8">
+              開發者文件 ID 不正確：目前是「{profile.id}」，必須改成登入 Email「{loginEmailKey}」
+              （Firestore → users，重新建立文件），否則資料權限不會生效。
+            </div>
+          ) : null}
 
           {profile?.isDeveloper && profile.previewRole ? (
             <div className="border-t border-yellow-200 bg-yellow-50 px-4 py-2 text-xs font-semibold leading-5 text-yellow-800 sm:px-6 lg:px-8">
