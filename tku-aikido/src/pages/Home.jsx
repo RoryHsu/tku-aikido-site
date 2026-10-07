@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CalendarDays, ShieldCheck, Smile } from "lucide-react";
 import IntroOverlay from "../components/IntroOverlay";
 import HeroSlider from "../components/HeroSlider";
+import LatestEvents from "../components/LatestEvents";
 
 import photo1 from "../assets/home/photo1.jpg";
 import photo2 from "../assets/home/photo2.jpg";
@@ -100,6 +101,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <LatestEvents />
 
       <section id="about" className="bg-white">
         <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8 lg:py-24">
