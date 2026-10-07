@@ -56,12 +56,12 @@ function RoleSelect({ value, onChange, disabled }) {
   );
 }
 
-// 帳號開通狀態：有寄過設定密碼信就顯示日期
+// 帳號開通狀態：有寄過重設密碼信就顯示日期
 function AccountStatus({ user }) {
   const sentAt = formatDate(user.accountInvitedAt);
   return (
     <div className="mt-0.5 text-xs text-slate-400">
-      {sentAt ? `已寄設定密碼信 ・ ${sentAt}` : "尚未由後台開通帳號（已能登入的人不用開通）"}
+      {sentAt ? `已寄重設密碼信 ・ ${sentAt}` : "尚未由後台開通帳號（已能登入的人不用開通）"}
     </div>
   );
 }
@@ -74,8 +74,69 @@ function InviteButton({ user, disabled, onClick }) {
       disabled={disabled}
       className="rounded-lg border border-amber-700 px-3 py-1.5 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-60"
     >
-      {user.accountInvitedAt ? "重寄設定密碼信" : "開通帳號"}
+      {user.accountInvitedAt ? "重寄密碼信" : "開通帳號"}
     </button>
+  );
+}
+
+// Firebase 的信件內容不能修改，所以另外產生一段訊息，讓社長用 LINE 等方式傳給對方
+function buildInviteMessage({ name, email, role }) {
+  const loginUrl = `${window.location.origin}/admin/login`;
+  return [
+    `${name ? `${name} 你好，` : ""}我已經幫你開通淡江合氣道社後台帳號（你的職位：${roleLabelMap[role] || "幹部"}）。`,
+    "",
+    `1. 請到信箱 ${email} 找一封主旨「重設淡江合氣道社的密碼」的信（可能在垃圾郵件或促銷內容裡）。`,
+    "2. 點信裡的連結，直接輸入你想要的新密碼即可，不需要舊密碼。",
+    `3. 設定好後到 ${loginUrl} 用這個 Email 和新密碼登入。`,
+    "",
+    "連結有使用期限，過期的話在登入頁按「忘記密碼」重新寄一次就好。",
+  ].join("\n");
+}
+
+function InviteNotice({ notice, onClose, closeLabel }) {
+  const [copied, setCopied] = useState(false);
+  const text = buildInviteMessage(notice);
+
+  const copy = async (e) => {
+    const area = e.currentTarget.closest("section")?.querySelector("textarea");
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+    } catch {
+      // 瀏覽器不允許自動複製時，選取文字讓使用者自己按 Ctrl+C
+      area?.select();
+    }
+  };
+
+  return (
+    <section className="rounded-2xl border-2 border-amber-100 bg-white p-5 shadow-sm sm:p-6">
+      <h2 className="text-base font-black text-slate-900">傳給 {notice.name || notice.email} 的通知訊息</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Firebase 寄出的信內容是固定的，建議把下面這段訊息用 LINE 等方式傳給對方，對方比較不會看不懂。
+      </p>
+      <textarea
+        readOnly
+        rows={8}
+        value={text}
+        className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 outline-none"
+      />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={copy}
+          className="rounded-xl bg-amber-700 px-5 py-2.5 text-sm font-semibold text-white hover:bg-amber-800"
+        >
+          {copied ? "已複製 ✓" : "複製通知訊息"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-xl border border-slate-300 px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+        >
+          {closeLabel || "關閉"}
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -103,6 +164,9 @@ export default function RolesPage() {
   const [termLabel, setTermLabel] = useState("");
   const [retireOthers, setRetireOthers] = useState(false);
   const [handingOver, setHandingOver] = useState(false);
+
+  // 開通帳號後要傳給對方的通知訊息
+  const [inviteNotice, setInviteNotice] = useState(null);
 
   const notify = (type, text) => setMessage({ type, text });
 
@@ -224,7 +288,8 @@ export default function RolesPage() {
           await updateDoc(doc(db, "users", trimmedEmail), {
             accountInvitedAt: serverTimestamp(),
           });
-          inviteNote = `，已寄出設定密碼信到 ${trimmedEmail}`;
+          inviteNote = `，已寄出重設密碼信到 ${trimmedEmail}`;
+          setInviteNotice({ name: name.trim(), email: trimmedEmail, role });
         } catch (err) {
           console.error("invite error:", err);
           inviteNote = `，但開通帳號失敗：${inviteErrorMessage(err)}。可以稍後在名單中按「開通帳號」重試`;
@@ -243,7 +308,7 @@ export default function RolesPage() {
     setAdding(false);
   };
 
-  // 開通帳號 / 重寄設定密碼信
+  // 開通帳號 / 重寄重設密碼信
   const sendInvite = async (user) => {
     setBusyId(user.id);
     try {
@@ -251,11 +316,12 @@ export default function RolesPage() {
       await updateDoc(doc(db, "users", user.id), {
         accountInvitedAt: serverTimestamp(),
       });
+      setInviteNotice({ name: user.name, email: emailKeyOf(user), role: user.role });
       notify(
         "success",
         created
-          ? `已幫「${user.name}」開通帳號，設定密碼信已寄到 ${user.email}`
-          : `「${user.name}」已經有帳號，已重新寄出設定密碼信到 ${user.email}`
+          ? `已幫「${user.name}」開通帳號，重設密碼信已寄到 ${user.email}`
+          : `「${user.name}」已經有帳號，已重新寄出重設密碼信到 ${user.email}`
       );
       fetchUsers();
     } catch (err) {
@@ -349,7 +415,7 @@ export default function RolesPage() {
     const ok = window.confirm(
       `確定把社長交接給「${successor.name}」（${successor.email}）嗎？\n\n` +
         (successor.isNew
-          ? "・系統會先幫新社長開通帳號，並寄出設定密碼信。\n"
+          ? "・系統會先幫新社長開通帳號，並寄出重設密碼信。\n"
           : "") +
         "・交接後你會變成「歷任幹部」，只能協助上傳照片與影片。\n" +
         (retireOthers ? "・其他現任幹部也會一起移到歷任幹部。\n" : "") +
@@ -412,10 +478,21 @@ export default function RolesPage() {
       notify(
         "success",
         successor.isNew
-          ? `交接完成，新任社長為「${successor.name}」，設定密碼信已寄到 ${successor.email}`
+          ? `交接完成，新任社長為「${successor.name}」，重設密碼信已寄到 ${successor.email}`
           : `交接完成，新任社長為「${successor.name}」`
       );
-      await refreshProfile();
+
+      if (successor.isNew) {
+        // 先留在這頁讓舊社長複製通知訊息，按「完成」後才切換成歷任幹部的畫面
+        setInviteNotice({
+          name: successor.name,
+          email: successor.email,
+          role: "president",
+          afterHandover: true,
+        });
+      } else {
+        await refreshProfile();
+      }
     } catch (err) {
       console.error("handover error:", err);
       notify("error", "交接失敗，請稍後再試，資料沒有任何變更。");
@@ -443,6 +520,19 @@ export default function RolesPage() {
           </div>
         ) : null}
 
+        {inviteNotice ? (
+          <InviteNotice
+            key={inviteNotice.email}
+            notice={inviteNotice}
+            closeLabel={inviteNotice.afterHandover ? "完成，離開此頁" : "關閉"}
+            onClose={() => {
+              const wasHandover = inviteNotice.afterHandover;
+              setInviteNotice(null);
+              if (wasHandover) refreshProfile();
+            }}
+          />
+        ) : null}
+
         {presidents.length > 1 ? (
           <div className="rounded-xl bg-red-50 px-4 py-3 text-sm leading-7 text-red-700">
             目前名單中有 {presidents.length} 位社長（
@@ -459,7 +549,7 @@ export default function RolesPage() {
               <h2 className="text-lg font-black text-slate-900">新增幹部</h2>
             </div>
             <p className="mt-1 text-sm leading-6 text-slate-500">
-              勾選「開通帳號」會用這個 Email 建立登入帳號並寄出設定密碼信，對方設定好密碼後登入，就會看到自己職位的後台。
+              勾選「開通帳號」會用這個 Email 建立登入帳號並寄出重設密碼信，對方設定好密碼後登入，就會看到自己職位的後台。
               舊幹部繼續擔任不用重新開通，要換職位直接在下方名單修改即可。
             </p>
 
@@ -503,7 +593,7 @@ export default function RolesPage() {
                   checked={inviteOnAdd}
                   onChange={(e) => setInviteOnAdd(e.target.checked)}
                 />
-                同時開通帳號，寄設定密碼信給對方
+                同時開通帳號，寄重設密碼信給對方
               </label>
             </form>
           </section>
