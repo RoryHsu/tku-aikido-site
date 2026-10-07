@@ -41,19 +41,6 @@ function PublicLayout() {
   );
 }
 
-// 前台共用版面：每個前台頁面都有導覽列與頁尾
-function PublicLayout() {
-  return (
-    <div className="flex min-h-screen flex-col bg-white text-slate-950">
-      <Navbar />
-      <main className="flex-1">
-        <Outlet />
-      </main>
-      <Footer />
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <BrowserRouter>
