@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, Navigate, Outlet } from "react-router-dom
 
 import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
-import DeskPet from "./components/DeskPet";
 
 import Home from "./pages/Home";
 import About from "./pages/About";
@@ -38,7 +37,6 @@ function PublicLayout() {
         <Outlet />
       </main>
       <Footer />
-      <DeskPet />
     </div>
   );
 }
